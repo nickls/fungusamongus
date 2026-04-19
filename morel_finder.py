@@ -818,15 +818,15 @@ def build_map(results_by_type, fires, center=None):
         color = mt["color"]
         icon_letter = mt["icon"]
 
-        # Heatmap for this type
+        # Heatmap — only from scored burns above threshold
         heat_data = [[r["zone"]["lat"], r["zone"]["lon"], r["result"]["total"] / 100.0]
-                     for r in results if r["result"]["total"] > 30]
+                     for r in results if r["result"]["total"] >= 50]
         if heat_data:
             HeatMap(
-                heat_data, radius=25, blur=18, max_zoom=13,
-                gradient={0.3: "blue", 0.5: "lime", 0.7: "yellow", 0.9: "orange", 1.0: "red"},
+                heat_data, radius=12, blur=8, max_zoom=15, min_opacity=0.3,
+                gradient={0.4: "blue", 0.6: "lime", 0.75: "yellow", 0.9: "orange", 1.0: "red"},
                 name=f"{mt['label']} Heatmap",
-                show=(mtype == "morel"),  # only morel heatmap on by default
+                show=(mtype == "morel"),
             ).add_to(m)
 
         # Scored burn markers
@@ -834,7 +834,7 @@ def build_map(results_by_type, fires, center=None):
             name=f"{mt['label']} Sites",
             show=(mtype == "morel"),  # only morel on by default
         )
-        for r in sorted(results, key=lambda x: x["result"]["total"], reverse=True)[:75]:
+        for r in sorted(results, key=lambda x: x["result"]["total"], reverse=True):
             z, res = r["zone"], r["result"]
             total = res["total"]
             label, rating_color = rating(total)
@@ -997,73 +997,67 @@ def dedupe_burns(fires, min_dist_km=0.5):
 
 
 def main():
-    print("MUSHROOM FORAGING RECOMMENDER — Burn Site Analysis")
+    print("MOREL FORAGING — Burn Site Analysis")
     print("=" * 60)
     CACHE_DIR.mkdir(exist_ok=True)
 
     # Step 1: Gather all fire/burn data
-    print(f"\n[1/5] Fetching fire + treatment data ({SEARCH_RADIUS_KM}km)...")
+    print(f"\n[1/4] Fetching fire + treatment data ({SEARCH_RADIUS_KM}km)...")
     all_fires = gather_fire_data(ALDER_CREEK, SEARCH_RADIUS_KM)
 
-    # Step 2: Filter to scoreable burn sites (need lat/lon, prefer RX burns)
+    # Step 2: Filter to scoreable burn sites (need lat/lon, RX burns only)
     burns_to_score = [f for f in all_fires
                       if f.get("centroid_lat") and f.get("centroid_lon")
                       and f.get("is_rx")]
     burns_to_score = dedupe_burns(burns_to_score, min_dist_km=0.3)
-    print(f"\n[2/5] {len(burns_to_score)} unique burn sites to score")
+    print(f"\n[2/4] {len(burns_to_score)} unique burn sites to score (morels only)")
 
-    # Step 3: Score each burn for each mushroom type (parallel weather/elev fetches)
-    all_results = {}  # {mushroom_type: [results]}
-    for mtype in MUSHROOM_TYPES:
-        mt = MUSHROOM_TYPES[mtype]
-        print(f"\n[3/5] Scoring {len(burns_to_score)} burns for {mt['label']}...")
-        results = []
-        with ThreadPoolExecutor(max_workers=6) as pool:
-            futures = {pool.submit(score_burn, f, mtype): f for f in burns_to_score}
-            for fut in as_completed(futures):
-                try:
-                    r = fut.result()
-                    if r and r["result"]["total"] > 0:
-                        results.append(r)
-                except Exception:
-                    pass
-        results.sort(key=lambda r: r["result"]["total"], reverse=True)
-        all_results[mtype] = results
-        top3 = results[:3]
-        if top3:
-            print(f"  Top: {', '.join(f'{r['zone']['name']} ({r['result']['total']})' for r in top3)}")
+    # Step 3: Score each burn for morels in parallel
+    print(f"\n[3/4] Scoring burns...")
+    results = []
+    with ThreadPoolExecutor(max_workers=6) as pool:
+        futures = {pool.submit(score_burn, f, "morel"): f for f in burns_to_score}
+        for fut in as_completed(futures):
+            try:
+                r = fut.result()
+                if r and r["result"]["total"] > 0:
+                    results.append(r)
+            except Exception:
+                pass
+    results.sort(key=lambda r: r["result"]["total"], reverse=True)
 
-    # Step 4: Reports
-    print("\n[4/5] Reports...")
-    for mtype, results in all_results.items():
-        if results:
-            print_report(results, mtype)
+    top5 = results[:5]
+    for r in top5:
+        lbl, _ = rating(r["result"]["total"])
+        print(f"  {r['zone']['name']:40s} {r['result']['total']:3d}/100 [{lbl}]")
 
-    # Step 5: Maps
-    print("\n[5/5] Building maps...")
+    # Report
+    print_report(results, "morel")
 
-    # LOCAL MAP — 30mi from Alder Creek
-    local_results = {
-        mtype: [r for r in results
-                if haversine_km(r["zone"]["lat"], r["zone"]["lon"],
-                                ALDER_CREEK[0], ALDER_CREEK[1]) <= LOCAL_RADIUS_KM]
-        for mtype, results in all_results.items()
-    }
-    m_local = build_map(local_results, all_fires, center=ALDER_CREEK)
+    # Step 4: Maps
+    print("\n[4/4] Building maps...")
+    morel_results = {"morel": results}
+
+    # LOCAL MAP
+    local = {"morel": [r for r in results
+                       if haversine_km(r["zone"]["lat"], r["zone"]["lon"],
+                                       ALDER_CREEK[0], ALDER_CREEK[1]) <= LOCAL_RADIUS_KM]}
+    local_fires = [f for f in all_fires
+                   if f.get("centroid_lat") and f.get("centroid_lon")
+                   and haversine_km(f["centroid_lat"], f["centroid_lon"],
+                                    ALDER_CREEK[0], ALDER_CREEK[1]) <= LOCAL_RADIUS_KM]
+    m_local = build_map(local, local_fires, center=ALDER_CREEK)
     m_local.save("morel_local_map.html")
-    local_ct = sum(len(v) for v in local_results.values())
-    print(f"  morel_local_map.html ({local_ct} scored burns)")
+    print(f"  morel_local_map.html ({len(local['morel'])} scored burns)")
 
-    # BASIN MAP — full Greater Tahoe
-    m_basin = build_map(all_results, all_fires, center=TAHOE_BASIN_CENTER)
+    # BASIN MAP
+    m_basin = build_map(morel_results, all_fires, center=TAHOE_BASIN_CENTER)
     m_basin.save("morel_basin_map.html")
-    basin_ct = sum(len(v) for v in all_results.values())
-    print(f"  morel_basin_map.html ({basin_ct} scored burns)")
+    print(f"  morel_basin_map.html ({len(results)} scored burns)")
 
-    # CSV — morel results (primary)
-    morel_results = all_results.get("morel", [])
+    # CSV
     summary = []
-    for r in morel_results[:100]:  # top 100
+    for r in results[:100]:
         lbl, _ = rating(r["result"]["total"])
         dist = haversine_km(r["zone"]["lat"], r["zone"]["lon"],
                             ALDER_CREEK[0], ALDER_CREEK[1])
