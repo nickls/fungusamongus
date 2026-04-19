@@ -1,2 +1,21 @@
-cache
-.venv
+# Python
+.venv/
+__pycache__/
+*.pyc
+
+# Cached API responses + parsed PFIRS data
+cache/
+
+# Raw scraped HTML (15MB+)
+pfirs_raw.html
+
+# Generated outputs
+*.html
+*.png
+*.csv
+
+# Matplotlib temp dirs
+matplotlib-*/
+
+# OS
+.DS_Store
