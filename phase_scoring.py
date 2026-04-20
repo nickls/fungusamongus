@@ -269,17 +269,20 @@ def classify_phase(features, config=None):
 # Learned from 21 labeled scenarios via logistic regression (95% accuracy)
 # See utils/fit_regression.py for details. Re-fit with:
 #   python -m utils.fit_regression --save coefficients.json
+# Learned from 70 labeled scenarios (21 synthetic + 49 real-world from cache)
+# via logistic regression. 89% accuracy. Re-fit with:
+#   python -m utils.fit_regression --json data/real_scenarios_labeled.json
 READINESS_COEFFICIENTS = {
-    "start_days": 0.111362,
-    "grow_days": 0.260611,
-    "max_bad_streak": -0.088457,
-    "growth_was_reset": -0.030186,
-    "soil_avg_14d": -0.252205,
-    "current_soil": 0.271431,
-    "warming_rate": 0.466214,
-    "precip_events": 0.877758,
-    "is_currently_good": 0.005918,
-    "intercept": -8.348297,
+    "start_days": 0.094569,
+    "grow_days": 0.194117,
+    "max_bad_streak": -0.204683,
+    "growth_was_reset": 0.846759,
+    "soil_avg_14d": 0.338649,
+    "current_soil": -0.271436,
+    "warming_rate": 0.374796,
+    "precip_events": 0.702138,
+    "is_currently_good": 1.041947,
+    "intercept": -7.674090,
 }
 
 
