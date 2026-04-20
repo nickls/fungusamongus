@@ -193,6 +193,26 @@ class TestSoilGDD:
         assert result["scores"]["soil_gdd"] >= 0
         assert "soil_gdd" in result["details"]
 
+    def test_trend_uses_full_history_not_just_forecast(self):
+        """Trend should use full hist+forecast, not just 14-day forecast.
+        Bug: short forecast window with high variance inflated slope to +2.3F/day
+        when actual full-history slope was +0.2F/day."""
+        weather = make_weather(
+            # Forecast: noisy but roughly flat around 50F
+            soil_temps=[46, 50, 49, 53, 58, 64, 61, 57, 34, 42, 60, 60, 58, 53],
+            highs=[60] * 14, lows=[38] * 14, precip_14d=1.5,
+        )
+        # 30-day history: oscillating 33-52F, slight upward trend
+        weather["hist_soil_temp"] = [33, 48, 46, 50, 51, 52, 53, 55, 54, 51,
+                                     40, 35, 40, 33, 35, 45, 50, 52, 52, 47,
+                                     43, 39, 35, 35, 35, 34, 42, 37, 47, 50]
+        fire = make_fire()
+        result = score_burn_site(fire, weather, 5500, "morel", GOOD_TERRAIN)
+        trend = result["details"].get("soil_trend_per_day", 0)
+        # With full 44-day history, trend should be modest (~0.2F/day), not 2.3F/day
+        assert abs(trend) < 1.0, \
+            f"Trend {trend}F/day — should be <1.0 with full history (was 2.3 with forecast only)"
+
 
 # ══════════════════════════════════════════════════════════════════
 # C. Cold Snap Scenarios

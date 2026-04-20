@@ -325,6 +325,7 @@ function makePopup(burn, day) {
   html += `<div style="font-size:11px;color:#888;margin-bottom:6px;">`;
   html += `${(burn.acres||0).toFixed(0)}ac | ${burn.burn_type} | ${burn.elevation_ft?.toFixed(0)||"?"}ft`;
   if (burn.slope != null) html += ` | ${burn.slope.toFixed(0)}deg ${aspectDir(burn.aspect)}`;
+  html += ` | <a href="https://www.google.com/maps?q=${burn.lat},${burn.lon}" target="_blank" style="color:#53a8b6;">Map</a>`;
   html += `</div>`;
 
   // Score + factor breakdown as colored blocks

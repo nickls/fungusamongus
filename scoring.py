@@ -237,10 +237,11 @@ def score_burn_site(fire: dict, weather: dict, elev: float | None,
     else:
         details["soil_gdd"] = "no data"
 
-    # Also compute trend (F/day) as secondary detail for the popup
-    if len(soil_temps) >= 6:
-        x = np.arange(len(soil_temps))
-        slope, _ = np.polyfit(x, soil_temps, 1)
+    # Compute trend (F/day) from full history+forecast for accuracy
+    trend_temps = all_soil_temps if len(all_soil_temps) >= 6 else soil_temps
+    if len(trend_temps) >= 6:
+        x = np.arange(len(trend_temps))
+        slope, _ = np.polyfit(x, trend_temps, 1)
         trend_per_day = slope
         if trend_per_day > 0.5:
             details["soil_trend"] = f"WARMING (+{trend_per_day:.1f}F/day)"
