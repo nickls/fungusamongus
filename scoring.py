@@ -80,6 +80,80 @@ def extract_weather_details(weather: dict) -> dict:
     return d
 
 
+def make_day_weather(weather: dict, day_offset: int) -> dict:
+    """
+    Build a weather dict for a specific day (0=today, 1=tomorrow, ..., 7).
+
+    The forecast arrays have 14 entries: 7 past + 7 future. Index 7 = today.
+    For day N, we use forecast index 7+N for that day's values,
+    and the 7 days leading up to it for trends/averages.
+    """
+    today_idx = 7  # index of today in the 14-day forecast arrays
+    target_idx = today_idx + day_offset
+
+    def safe_slice(arr, start, end):
+        if not arr:
+            return []
+        s = max(0, start)
+        e = min(len(arr), end)
+        return [x for x in arr[s:e] if x is not None]
+
+    # For soil temps: use the 7 days leading up to target + target day
+    # This preserves trend detection (first half vs second half)
+    soil_all = weather.get("forecast_soil_temp", [])
+    soil_window = safe_slice(soil_all, target_idx - 7, target_idx + 1)
+
+    # For snow depth: same window
+    snow_all = weather.get("forecast_snow_depth", [])
+    snow_window = safe_slice(snow_all, target_idx - 7, target_idx + 1)
+
+    # Soil moisture: 7-day window ending on target day
+    sm_all = weather.get("forecast_soil_moisture", [])
+    sm_window = safe_slice(sm_all, target_idx - 7, target_idx + 1)
+
+    # Air temps: 7-day window ending on target day
+    fc_max = weather.get("forecast_temps_max", [])
+    fc_min = weather.get("forecast_temps_min", [])
+    highs = safe_slice(fc_max, target_idx - 6, target_idx + 1)
+    lows = safe_slice(fc_min, target_idx - 6, target_idx + 1)
+
+    # Precip: combine historical + forecast, sum the 14 days leading up to target
+    hist_precip = weather.get("hist_precip", [])
+    fc_precip = safe_slice(weather.get("forecast_temps_max", []), 0, 0)  # placeholder
+    # Build a combined precip timeline: 30 days hist + 14 days forecast
+    all_precip = list(weather.get("hist_precip", [])) + safe_slice(
+        weather.get("forecast_temps_max", []), 0, 0)  # need forecast precip
+    # Actually: hist_precip is 30 days, forecast daily precip isn't stored separately
+    # For day 0, use hist_precip as-is. For day N, we don't have future precip in hist.
+    # The forecast daily data has precipitation_sum — it's in forecast_temps arrays? No.
+    # Let me just use hist_precip for all days (precip changes slowly over 7 days)
+    # This is an approximation — future precip forecast would improve it.
+
+    return {
+        "hist_temps_max": weather.get("hist_temps_max", []),
+        "hist_temps_min": weather.get("hist_temps_min", []),
+        "hist_precip": weather.get("hist_precip", []),
+        "hist_snowfall": weather.get("hist_snowfall", []),
+        "forecast_temps_max": highs,
+        "forecast_temps_min": lows,
+        "forecast_soil_temp": soil_window,
+        "forecast_soil_moisture": sm_window,
+        "forecast_snow_depth": snow_window,
+        "current_temp": weather.get("current_temp"),
+    }
+
+
+def score_burn_multiday(fire, weather, elev, terrain=None, mushroom_type="morel", days=8):
+    """Score a burn for days 0-7, returning per-day score dicts."""
+    day_scores = []
+    for d in range(days):
+        day_wx = make_day_weather(weather, d)
+        result = score_burn_site(fire, day_wx, elev, mushroom_type, terrain)
+        result["day"] = d
+        day_scores.append(result)
+    return day_scores
+
+
 def score_burn_site(fire: dict, weather: dict, elev: float | None,
                     mushroom_type: str = "morel", terrain: dict | None = None) -> dict:
     """

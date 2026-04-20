@@ -354,6 +354,7 @@ Second runs are near-instant if cache is warm.
 - **Burn severity** — dNBR from Sentinel-2. Differentiate moderate understory burns (ideal) from high-severity canopy kills (less productive for morels, though still viable).
 
 ### Features
+- **Interactive score filter sliders** — JS control panel on the map to filter markers by individual factor thresholds (e.g. "show only burns where warming_trend > 20"). Requires emitting score data as JSON + custom JS overlay on the folium output.
 - Per-mushroom-type scoring (chanterelles, porcini, matsutake) with different candidate generation — mature forest sites, tree association data, not burn sites
 - PFIRS auto-refresh without browser cookie
 - Static PNG map export for GitHub Pages

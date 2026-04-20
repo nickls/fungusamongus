@@ -10,15 +10,17 @@ Usage:
     python morel_finder.py --config alt.py     # custom scoring config
 """
 
+import json
 import math
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from datetime import datetime
+from datetime import datetime, timedelta
+from pathlib import Path
 
 import pandas as pd
 
 from config import (ALDER_CREEK, TAHOE_BASIN_CENTER, SEARCH_RADIUS_KM,
-                    LOCAL_RADIUS_KM, CACHE_DIR, MUSHROOM_TYPES)
-from scoring import score_burn_site
+                    LOCAL_RADIUS_KM, CACHE_DIR, MUSHROOM_TYPES, ALGO_VERSION)
+from scoring import score_burn_site, score_burn_multiday
 from mapping import build_map, build_chart, print_report, rating
 from utils.weather import get_weather
 from utils.elevation import get_elevation_ft, get_slope_aspect
@@ -37,7 +39,7 @@ def haversine_km(lat1, lon1, lat2, lon2):
 
 
 def score_burn(fire, mushroom_type="morel"):
-    """Fetch weather + elevation + terrain for a burn and score it."""
+    """Fetch weather + elevation + terrain for a burn. Score for day 0 + days 0-7."""
     lat = fire.get("centroid_lat")
     lon = fire.get("centroid_lon")
     if lat is None or lon is None:
@@ -48,8 +50,57 @@ def score_burn(fire, mushroom_type="morel"):
     name = fire.get("name", "?")
     zone = {"name": name, "lat": lat, "lon": lon, "elevation_ft": elev,
             "slope": terrain.get("slope"), "aspect": terrain.get("aspect")}
+    # Day 0 score (current conditions) — used for reports/folium maps
     result = score_burn_site(fire, weather, elev, mushroom_type, terrain=terrain)
-    return {"zone": zone, "fire": fire, "weather": weather, "result": result}
+    # Multi-day scores — used for SPA/JSON export
+    day_scores = score_burn_multiday(fire, weather, elev, terrain, mushroom_type)
+    return {"zone": zone, "fire": fire, "weather": weather, "result": result,
+            "day_scores": day_scores}
+
+
+def export_json(results, all_fires, run_date):
+    """Export scored burns as JSON for the SPA frontend."""
+    today = datetime.now()
+    data = {
+        "run_date": run_date,
+        "algo_version": ALGO_VERSION,
+        "center": {"lat": ALDER_CREEK[0], "lon": ALDER_CREEK[1], "name": "Alder Creek"},
+        "local_radius_km": LOCAL_RADIUS_KM,
+        "burns": [],
+    }
+    for r in results:
+        z = r["zone"]
+        f = r.get("fire", {})
+        days = []
+        for ds in r.get("day_scores", []):
+            day_date = (today + timedelta(days=ds["day"])).strftime("%Y-%m-%d")
+            days.append({
+                "day": ds["day"],
+                "date": day_date,
+                "total": ds["total"],
+                **ds["scores"],
+                # Include key weather details for popup
+                **{k: v for k, v in ds.get("details", {}).items() if isinstance(v, str)},
+            })
+        data["burns"].append({
+            "name": z["name"],
+            "lat": z["lat"],
+            "lon": z["lon"],
+            "acres": f.get("acres", 0),
+            "burn_type": f.get("pfirs_burn_type", "") or ("RX" if f.get("is_rx") else "wildfire"),
+            "burn_date": f.get("date", ""),
+            "elevation_ft": z.get("elevation_ft"),
+            "slope": z.get("slope"),
+            "aspect": z.get("aspect"),
+            "days": days,
+        })
+
+    out_dir = Path("docs/data")
+    out_dir.mkdir(parents=True, exist_ok=True)
+    out_path = out_dir / "latest.json"
+    out_path.write_text(json.dumps(data, indent=None, separators=(",", ":")))
+    size_kb = out_path.stat().st_size / 1024
+    print(f"  docs/data/latest.json ({size_kb:.0f}KB, {len(data['burns'])} burns x {len(days)} days)")
 
 
 def gather_fire_data(center, radius_km):
@@ -169,6 +220,9 @@ def main():
     if summary:
         pd.DataFrame(summary).to_csv(f"morel_results_{run_date}.csv", index=False)
         print(f"  morel_results_{run_date}.csv")
+
+    # JSON for SPA
+    export_json(results, all_fires, run_date)
 
     print(f"\nDone! Cache: {CACHE_DIR}/")
 

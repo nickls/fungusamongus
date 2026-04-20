@@ -9,10 +9,10 @@ cache/
 # Raw scraped HTML (15MB+)
 pfirs_raw.html
 
-# Generated outputs
-*.html
-*.png
-*.csv
+# Generated outputs (root level — docs/ is tracked for GH Pages)
+/*.html
+/*.png
+/*.csv
 
 # Matplotlib temp dirs
 matplotlib-*/

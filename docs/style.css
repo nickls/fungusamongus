@@ -1,0 +1,226 @@
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  background: #1a1a2e;
+  color: #e0e0e0;
+}
+
+#app {
+  display: flex;
+  height: 100vh;
+  width: 100vw;
+}
+
+/* ── Sidebar toggle ── */
+#sidebar-toggle {
+  position: fixed;
+  top: 90px;
+  left: 10px;
+  z-index: 1000;
+  width: 34px;
+  height: 34px;
+  border: 2px solid rgba(0,0,0,0.2);
+  border-radius: 4px;
+  background: white;
+  color: #333;
+  font-size: 18px;
+  cursor: pointer;
+  box-shadow: 0 1px 5px rgba(0,0,0,0.3);
+  display: none;
+  align-items: center;
+  justify-content: center;
+}
+#sidebar-toggle:hover { background: #f0f0f0; }
+#app.sidebar-hidden #sidebar-toggle { display: flex; }
+#app.sidebar-hidden #sidebar { display: none; }
+#app.sidebar-hidden #map { flex: 1; }
+
+/* ── Sidebar ── */
+#sidebar {
+  width: 320px;
+  background: #16213e;
+  padding: 16px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  border-right: 1px solid #0f3460;
+  position: relative;
+}
+
+#sidebar-minimize {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  background: none;
+  border: 1px solid #0f3460;
+  border-radius: 4px;
+  color: #888;
+  font-size: 14px;
+  cursor: pointer;
+  padding: 2px 8px;
+  line-height: 1;
+}
+#sidebar-minimize:hover { color: #e94560; border-color: #e94560; }
+
+#sidebar h1 {
+  font-size: 18px;
+  color: #e94560;
+  margin-bottom: 4px;
+}
+
+#sidebar .meta {
+  font-size: 12px;
+  color: #888;
+}
+
+/* Day selector */
+.day-bar {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+
+.day-btn {
+  flex: 1;
+  min-width: 36px;
+  padding: 6px 2px;
+  border: 1px solid #0f3460;
+  border-radius: 4px;
+  background: #1a1a2e;
+  color: #ccc;
+  cursor: pointer;
+  text-align: center;
+  font-size: 11px;
+  line-height: 1.3;
+  transition: all 0.15s;
+}
+
+.day-btn:hover { background: #0f3460; }
+.day-btn.active {
+  background: #e94560;
+  color: white;
+  border-color: #e94560;
+}
+.day-btn .day-label { font-weight: bold; }
+.day-btn .day-count { font-size: 10px; opacity: 0.7; }
+
+/* Zoom toggle */
+.zoom-bar {
+  display: flex;
+  gap: 4px;
+}
+
+.zoom-btn {
+  flex: 1;
+  padding: 8px;
+  border: 1px solid #0f3460;
+  border-radius: 4px;
+  background: #1a1a2e;
+  color: #ccc;
+  cursor: pointer;
+  text-align: center;
+  font-size: 13px;
+  transition: all 0.15s;
+}
+
+.zoom-btn:hover { background: #0f3460; }
+.zoom-btn.active { background: #0f3460; color: white; border-color: #53a8b6; }
+
+/* Sliders */
+.slider-group {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.slider-row {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.slider-row label {
+  display: flex;
+  justify-content: space-between;
+  font-size: 12px;
+  color: #aaa;
+}
+
+.slider-row label .val {
+  color: #53a8b6;
+  font-weight: bold;
+}
+
+.slider-row input[type="range"] {
+  width: 100%;
+  accent-color: #e94560;
+  cursor: pointer;
+}
+
+.slider-reset {
+  padding: 6px 12px;
+  border: 1px solid #0f3460;
+  border-radius: 4px;
+  background: #1a1a2e;
+  color: #888;
+  cursor: pointer;
+  font-size: 12px;
+  align-self: flex-end;
+}
+.slider-reset:hover { color: #e94560; border-color: #e94560; }
+
+/* Stats */
+.stats {
+  font-size: 12px;
+  color: #888;
+  padding: 8px 0;
+  border-top: 1px solid #0f3460;
+}
+.stats span { color: #53a8b6; font-weight: bold; }
+
+/* Legend */
+.legend {
+  font-size: 12px;
+  padding: 8px 0;
+  border-top: 1px solid #0f3460;
+}
+.legend-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 3px 0;
+}
+.legend-diamond {
+  width: 12px; height: 12px;
+  transform: rotate(45deg);
+  border-radius: 2px;
+}
+.legend-dot {
+  width: 8px; height: 8px;
+  border-radius: 50%;
+}
+
+/* ── Map ── */
+#map {
+  flex: 1;
+  height: 100vh;
+}
+
+/* Popup — Leaflet overrides for wider popups */
+.leaflet-popup-content-wrapper {
+  border-radius: 8px !important;
+}
+.leaflet-popup-content {
+  margin: 10px 12px !important;
+  max-height: 420px;
+  overflow-y: auto;
+}
+
+/* Mobile */
+@media (max-width: 768px) {
+  #app { flex-direction: column; }
+  #sidebar { width: 100%; height: auto; max-height: 40vh; }
+  #map { height: 60vh; }
+}
