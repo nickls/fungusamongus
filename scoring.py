@@ -98,10 +98,11 @@ def make_day_weather(weather: dict, day_offset: int) -> dict:
         e = min(len(arr), end)
         return [x for x in arr[s:e] if x is not None]
 
-    # For soil temps: use the 7 days leading up to target + target day
-    # This preserves trend detection (first half vs second half)
+    # For soil temps: use the full 14-day window for trend detection.
+    # Research says morels respond to warming over 20-30 days.
+    # A short window exaggerates daily noise into false trends.
     soil_all = weather.get("forecast_soil_temp", [])
-    soil_window = safe_slice(soil_all, target_idx - 7, target_idx + 1)
+    soil_window = safe_slice(soil_all, 0, min(target_idx + 1, len(soil_all)))
 
     # For snow depth: same window
     snow_all = weather.get("forecast_snow_depth", [])
