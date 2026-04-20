@@ -241,11 +241,12 @@ function render() {
       const readiness = pd.readiness || 0;
       const potential = burn.potential || 0;
       const phaseColorMap = { EMERGING: "purple", GROWING: "green", WAITING: "orange", TOO_EARLY: "gray" };
-      const color = phaseColorMap[phase] || "gray";
-      const showDiamond = phase === "EMERGING" || phase === "GROWING";
+      // Shape = potential (site quality), number inside = readiness
+      const color = phase === "EMERGING" ? "purple" : phase === "GROWING" ? "green" : "orange";
+      const showDiamond = potential >= 50;  // only good burn sites get diamonds
 
       if (showDiamond) {
-        const size = 22 + Math.floor(readiness / 10);
+        const size = 18 + Math.floor(potential / 10);  // bigger = higher potential
         const icon = L.divIcon({
           className: "",
           html: `<div style="
@@ -370,9 +371,9 @@ function makePopup(burn, day, burnIdx) {
   html += `<div style="font-size:20px;font-weight:bold;color:${phaseColor};">${readiness}</div>`;
   html += `</div>`;
   html += `<div style="font-size:10px;color:#888;line-height:1.4;">`;
-  html += `${pd.grow_days || 0} grow days<br>`;
-  html += `${pd.start_days || 0} start days<br>`;
-  if (pd.max_bad_streak > 0) html += `${pd.max_bad_streak}d bad streak`;
+  html += `${pd.grow_days || 0} grow / ${pd.start_days || 0} start days<br>`;
+  html += `Soil: ${day.soil_temp || "?"} | Age: ${day.burn_age || "?"}<br>`;
+  if (day.snow_status) html += `${day.snow_status}`;
   html += `</div>`;
   html += `</div>`;
 
