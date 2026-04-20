@@ -4,6 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Burn Detail — FungusAmong.us 5000</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background: #1a1a2e; color: #e0e0e0; padding: 20px; }
@@ -215,107 +216,28 @@ async function init() {
     return out;
   }
 
-  // ── Temperature Line Chart (SVG) — soil + air on same timeline ──
-  {
-    const soilHist = h.hist_soil_temp || [];
-    const soilFc = h.forecast_soil_temp || [];
-    const airHist = h.hist_temps_max || [];
-    const airFc = h.forecast_temps_max || [];
-    const soilAll = [...soilHist, ...soilFc];
-    const airAll = [...airHist, ...airFc];
-    const allTemps = [...soilAll, ...airAll].filter(v => v != null);
-
-    if (allTemps.length > 0) {
-      const W = 860, H = 130, PAD = 30;
-      const maxT = Math.max(...allTemps) + 5;
-      const minT = Math.min(...allTemps) - 5;
-      const totalPts = HIST_DAYS + FC_DAYS;
-      const xScale = (W - PAD) / (totalPts - 1);
-      const yScale = (H - 10) / (maxT - minT);
-      const y = v => H - 5 - (v - minT) * yScale;
-      const x = i => PAD + i * xScale;
-      const todayX = x(TODAY_IDX);
-
-      function makePath(vals, len) {
-        let pts = [];
-        for (let i = 0; i < len; i++) {
-          const v = i < vals.length ? vals[i] : null;
-          if (v != null) pts.push(`${i === 0 || pts.length === 0 ? 'M' : 'L'}${x(i).toFixed(1)},${y(v).toFixed(1)}`);
-        }
-        return pts.join(" ");
-      }
-
-      html += `<div class="chart-card" style="grid-column:1/-1;">`;
-      html += `<h3>Temperature — <span style="color:#c0392b">Soil</span> &amp; <span style="color:#e67e22">Air High</span> (F)</h3>`;
-      html += `<svg width="100%" viewBox="0 0 ${W} ${H}" style="overflow:visible;">`;
-      // Grid lines
-      for (let t = Math.ceil(minT/10)*10; t <= maxT; t += 10) {
-        html += `<line x1="${PAD}" x2="${W}" y1="${y(t)}" y2="${y(t)}" stroke="#0f3460" stroke-width="0.5"/>`;
-        html += `<text x="${PAD-4}" y="${y(t)+3}" fill="#555" font-size="9" text-anchor="end">${t}</text>`;
-      }
-      // Today line
-      html += `<line x1="${todayX}" x2="${todayX}" y1="0" y2="${H}" stroke="#e94560" stroke-width="1.5" stroke-dasharray="4,3"/>`;
-      html += `<text x="${todayX}" y="${H+12}" fill="#e94560" font-size="9" text-anchor="middle">today</text>`;
-      // Air line (behind, thinner)
-      html += `<path d="${makePath(airAll, totalPts)}" fill="none" stroke="#e67e22" stroke-width="1.5" opacity="0.7"/>`;
-      // Soil line (front, thicker)
-      html += `<path d="${makePath(soilAll, totalPts)}" fill="none" stroke="#c0392b" stroke-width="2.5"/>`;
-      // Forecast region shade
-      html += `<rect x="${todayX}" y="0" width="${W-todayX}" height="${H}" fill="#e94560" opacity="0.03"/>`;
-      html += `</svg>`;
-      html += `<div style="display:flex;justify-content:space-between;font-size:9px;color:#555;margin-top:2px;">`;
-      html += `<span>-30 days</span><span>+7 days</span></div></div>`;
-    }
+  // ── Chart.js: Temperature (line) and Moisture (bar) ──
+  // Build labels for 44-day timeline
+  const totalDays = HIST_DAYS + FC_DAYS;
+  const labels = [];
+  const runDate = new Date(data.run_date + "T12:00:00");
+  for (let i = 0; i < totalDays; i++) {
+    const dt = new Date(runDate);
+    dt.setDate(dt.getDate() + (i - HIST_DAYS));
+    const dayName = dayNames[dt.getDay()];
+    const mon = monthNames[dt.getMonth()];
+    if (i === HIST_DAYS) labels.push("TODAY");
+    else if (i % 7 === 0 || i === totalDays - 1) labels.push(`${mon} ${dt.getDate()}`);
+    else labels.push("");
   }
 
-  // ── Moisture Chart — rain bars (light blue) + snow depth bars (white) ──
-  {
-    const precip = h.hist_precip || [];
-    const snowAll = h.forecast_snow_depth || [];
-    const snowPadBefore = new Array(HIST_DAYS - 7).fill(null);
-    const snowFull = [...snowPadBefore, ...snowAll];
-    const fcPrecipPad = new Array(FC_DAYS).fill(null);
-    const precipFull = [...precip, ...fcPrecipPad];
-    const totalBars = HIST_DAYS + FC_DAYS;
-    const todayPct = (TODAY_IDX / totalBars) * 100;
+  // Temperature chart canvas
+  html += `<div class="chart-card" style="grid-column:1/-1;"><canvas id="tempChart"></canvas></div>`;
 
-    const hasP = precip.some(v => v != null && v > 0);
-    const hasS = snowAll.some(v => v != null && v > 0);
+  // Moisture chart canvas
+  html += `<div class="chart-card" style="grid-column:1/-1;"><canvas id="moistChart"></canvas></div>`;
 
-    if (hasP || hasS) {
-      const maxP = Math.max(...precip.filter(v => v != null), 0.5);
-      const maxS = Math.max(...snowAll.filter(v => v != null), 1);
-      const maxY = Math.max(maxP, maxS * 0.3);
-
-      html += `<div class="chart-card" style="grid-column:1/-1;">`;
-      html += `<h3>Moisture — <span style="color:#5bc0de">Rain</span> &amp; <span style="color:rgba(255,255,255,0.8)">Snow Depth</span></h3>`;
-      html += `<div style="position:relative;height:70px;">`;
-      html += `<div style="position:absolute;left:${todayPct}%;top:0;bottom:-18px;width:1px;background:#e94560;z-index:2;"></div>`;
-      html += `<div style="display:flex;gap:1px;align-items:flex-end;height:100%;">`;
-
-      for (let i = 0; i < totalBars; i++) {
-        const pv = precipFull[i];
-        const sv = i < snowFull.length ? snowFull[i] : null;
-
-        html += `<div style="flex:1;position:relative;height:100%;">`;
-        // Snow depth — white/very light, behind
-        if (sv != null && sv > 0) {
-          const pct = Math.max((sv / maxS) * 70, 3);
-          html += `<div style="position:absolute;bottom:0;left:0;right:0;height:${pct}%;background:rgba(255,255,255,0.25);border:1px solid rgba(255,255,255,0.4);border-bottom:none;border-radius:1px 1px 0 0;" title="Snow: ${sv.toFixed(1)}in"></div>`;
-        }
-        // Rain — light blue, front
-        if (pv != null && pv > 0) {
-          const pct = Math.max((pv / maxY) * 100, 5);
-          html += `<div style="position:absolute;bottom:0;left:15%;right:15%;height:${pct}%;background:#5bc0de;border-radius:1px 1px 0 0;" title="Rain: ${pv.toFixed(2)}in"></div>`;
-        }
-        html += `</div>`;
-      }
-      html += `</div></div>`;
-      html += `<div style="display:flex;justify-content:space-between;font-size:9px;color:#555;margin-top:4px;">`;
-      html += `<span>-30 days</span><span style="color:#e94560;">today</span><span>+7 days</span>`;
-      html += `</div></div>`;
-    }
-  }
+  // We'll initialize charts after innerHTML is set (below)
 
   // Soil deltas chart
   const deltas = d.soil_deltas;
@@ -384,6 +306,110 @@ async function init() {
   html += `</div>`;
 
   document.getElementById("content").innerHTML = html;
+
+  // ── Initialize Chart.js charts ──
+  const chartDefaults = {
+    responsive: true,
+    plugins: {
+      legend: { labels: { color: "#aaa", font: { size: 11 } } },
+      tooltip: { mode: "index", intersect: false },
+    },
+    scales: {
+      x: { ticks: { color: "#666", font: { size: 9 }, maxRotation: 0 }, grid: { color: "#0f3460" } },
+      y: { ticks: { color: "#888", font: { size: 10 } }, grid: { color: "#0f3460" } },
+    },
+  };
+
+  // Today vertical line plugin
+  const todayLinePlugin = {
+    id: "todayLine",
+    afterDraw(chart) {
+      const xScale = chart.scales.x;
+      const ctx = chart.ctx;
+      const todayX = xScale.getPixelForValue(TODAY_IDX);
+      ctx.save();
+      ctx.strokeStyle = "#e94560";
+      ctx.lineWidth = 1.5;
+      ctx.setLineDash([5, 4]);
+      ctx.beginPath();
+      ctx.moveTo(todayX, chart.chartArea.top);
+      ctx.lineTo(todayX, chart.chartArea.bottom);
+      ctx.stroke();
+      ctx.restore();
+    }
+  };
+
+  // Temperature chart
+  const soilHist = h.hist_soil_temp || [];
+  const soilFc = h.forecast_soil_temp || [];
+  const airHist = h.hist_temps_max || [];
+  const airFc = h.forecast_temps_max || [];
+  const soilAll = [...soilHist, ...new Array(Math.max(0, HIST_DAYS - soilHist.length)).fill(null), ...soilFc];
+  const airAll = [...airHist, ...new Array(Math.max(0, HIST_DAYS - airHist.length)).fill(null), ...airFc];
+
+  // Soil trend line data
+  let trendData = null;
+  const soilValid = soilAll.map((v, i) => v != null ? [i, v] : null).filter(Boolean);
+  if (soilValid.length >= 6) {
+    let sx=0,sy=0,sxy=0,sxx=0,n=soilValid.length;
+    for (const [xi,yi] of soilValid) { sx+=xi; sy+=yi; sxy+=xi*yi; sxx+=xi*xi; }
+    const slope = (n*sxy - sx*sy) / (n*sxx - sx*sx);
+    const intercept = (sy - slope*sx) / n;
+    trendData = soilAll.map((_,i) => +(intercept + slope*i).toFixed(1));
+  }
+
+  const tempCtx = document.getElementById("tempChart");
+  if (tempCtx && (soilAll.some(v=>v!=null) || airAll.some(v=>v!=null))) {
+    const datasets = [];
+    if (soilAll.some(v=>v!=null)) datasets.push({
+      label: "Soil Temp (F)", data: soilAll, borderColor: "#8B5E3C", backgroundColor: "rgba(139,94,60,0.1)",
+      borderWidth: 2.5, pointRadius: 0, tension: 0.3, fill: false,
+    });
+    if (airAll.some(v=>v!=null)) datasets.push({
+      label: "Air High (F)", data: airAll, borderColor: "#9b59b6", backgroundColor: "rgba(155,89,182,0.05)",
+      borderWidth: 1.5, pointRadius: 0, tension: 0.3, fill: false, borderDash: [4, 2],
+    });
+    if (trendData) datasets.push({
+      label: "Soil Trend", data: trendData, borderColor: "#e94560", borderWidth: 1.5,
+      pointRadius: 0, borderDash: [8, 4], fill: false,
+    });
+    new Chart(tempCtx, {
+      type: "line",
+      data: { labels, datasets },
+      options: { ...chartDefaults, plugins: { ...chartDefaults.plugins, title: { display: true, text: "Temperature (30-day history + 7-day forecast)", color: "#aaa" } } },
+      plugins: [todayLinePlugin],
+    });
+  }
+
+  // Moisture chart
+  const precip = h.hist_precip || [];
+  const snowAll2 = h.forecast_snow_depth || [];
+  const precipFull = [...precip, ...new Array(FC_DAYS).fill(null)];
+  const snowPad = new Array(HIST_DAYS - 7).fill(null);
+  const snowFull = [...snowPad, ...snowAll2, ...new Array(Math.max(0, totalDays - snowPad.length - snowAll2.length)).fill(null)];
+
+  const moistCtx = document.getElementById("moistChart");
+  if (moistCtx && (precip.some(v=>v>0) || snowAll2.some(v=>v>0))) {
+    new Chart(moistCtx, {
+      type: "bar",
+      data: {
+        labels,
+        datasets: [
+          {
+            label: "Rain (in)", data: precipFull.map(v => v > 0 ? v : null),
+            backgroundColor: "#5bc0de", borderRadius: 2, barPercentage: 0.8, order: 1,
+          },
+          {
+            label: "Snow Depth (in)", data: snowFull.map(v => v > 0 ? v : null),
+            backgroundColor: "rgba(255,255,255,0.3)", borderColor: "rgba(255,255,255,0.5)",
+            borderWidth: 1, borderRadius: 2, barPercentage: 0.9, order: 2,
+          },
+        ],
+      },
+      options: { ...chartDefaults, plugins: { ...chartDefaults.plugins, title: { display: true, text: "Moisture (Rain + Snow Depth)", color: "#aaa" } } },
+      plugins: [todayLinePlugin],
+    });
+  }
 }
 
 function chartCard(title, values, bars, selectedDay, maxVal) {
