@@ -128,6 +128,51 @@ body {
 .zoom-btn:hover { background: #0f3460; }
 .zoom-btn.active { background: #0f3460; color: white; border-color: #53a8b6; }
 
+/* Species selector */
+.species-bar {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px;
+}
+
+.species-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 8px;
+  border: 1px solid #0f3460;
+  border-radius: 6px;
+  background: #1a1a2e;
+  color: #aaa;
+  cursor: pointer;
+  font-size: 12px;
+  transition: all 0.15s;
+}
+
+.species-btn:hover:not(:disabled) { background: #0f3460; border-color: #53a8b6; }
+.species-btn.active {
+  background: #0f3460;
+  color: white;
+  border-color: #53a8b6;
+}
+.species-btn:disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
+}
+
+.species-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 4px;
+  color: white;
+  font-size: 11px;
+  font-weight: bold;
+  flex-shrink: 0;
+}
+
 /* Sliders */
 .slider-group {
   display: flex;

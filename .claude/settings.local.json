@@ -11,7 +11,9 @@
       "WebFetch(domain:gis.data.ca.gov)",
       "WebFetch(domain:ssl.arb.ca.gov)",
       "Bash(.venv/bin/python morel_finder.py)",
-      "Bash(.venv/bin/python -u morel_finder.py)"
+      "Bash(.venv/bin/python -u morel_finder.py)",
+      "WebFetch(domain:lfps.usgs.gov)",
+      "WebFetch(domain:www.landfire.gov)"
     ]
   },
   "sandbox": {

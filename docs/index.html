@@ -26,8 +26,26 @@
       <div>
         <label style="font-size:12px;color:#888;">View</label>
         <div class="zoom-bar">
-          <button class="zoom-btn active" data-zoom="local" onclick="setZoom('local')">Local (30mi)</button>
-          <button class="zoom-btn" data-zoom="basin" onclick="setZoom('basin')">Basin (75mi)</button>
+          <button class="zoom-btn active" data-zoom="local" onclick="setZoom('local')">Nearby</button>
+          <button class="zoom-btn" data-zoom="basin" onclick="setZoom('basin')">All Sites</button>
+        </div>
+      </div>
+
+      <div>
+        <label style="font-size:12px;color:#888;">Species</label>
+        <div class="species-bar" id="species-bar">
+          <button class="species-btn active" data-species="morel" onclick="selectSpecies('morel')">
+            <span class="species-icon" style="background:#DAA520;">M</span>Morel
+          </button>
+          <button class="species-btn" data-species="porcini" disabled title="Coming soon">
+            <span class="species-icon" style="background:#8B4513;">P</span>Porcini
+          </button>
+          <button class="species-btn" data-species="matsutake" disabled title="Sep-Nov">
+            <span class="species-icon" style="background:#CD853F;">T</span>Matsutake
+          </button>
+          <button class="species-btn" data-species="chanterelle" disabled title="Jul-Oct">
+            <span class="species-icon" style="background:#FF8C00;">C</span>Chanterelle
+          </button>
         </div>
       </div>
 
