@@ -13,7 +13,8 @@ See also: [Predictive Modeling Research](reference/predictive-modeling-for-burn-
 | 0.3.0 | 2026-04-19 | Moisture gate, warming trend, config-driven, terrain | |
 | 0.4.0 | 2026-04-19 | Soil temp hard gate, 4-factor model | [v0.4.0](reference/algo/v0.4.0.md) |
 | 0.5.0 | 2026-04-20 | 6-factor model, per-day scoring, SPA, 59 tests | [v0.5.0](reference/algo/v0.5.0.md) |
-| **0.6.0** | **2026-04-20** | **Soil GDD, historical soil temp, multi-point aspect, rain events** | **[v0.6.0](reference/algo/v0.6.0.md)** |
+| 0.6.0 | 2026-04-20 | Soil GDD, historical soil temp, multi-point aspect, rain events | [v0.6.0](reference/algo/v0.6.0.md) |
+| **0.6.1** | **2026-04-20** | **Cooling trend penalty on GDD, freeze damage detection** | |
 
 ## The Biological Model
 
@@ -79,6 +80,24 @@ Computed via linear regression (np.polyfit) across the soil temp time series to 
 *This is the key differentiator.* Two burns at the same elevation with the same 52F soil: one warming +0.8F/day scores 21, the other flat scores 5. The warming site will fruit first.
 
 Note: the warming trend score is also subject to the soil gate from factor A. A strong warming trend from 30F to 35F still scores near zero because soil is blocked.
+
+### GDD Modifiers (v0.6.1)
+
+The raw GDD score is modified by two conditions:
+
+**Cooling trend penalty:** If the soil temperature trend is negative (cooling), the GDD score is reduced. Accumulated heat matters, but if temps are dropping, growth stalls and the GDD "bank" isn't being spent productively.
+
+| Trend | GDD modifier |
+|-------|-------------|
+| Cooling >0.3F/day | GDD score x 0.5 |
+| Cooling 0.1-0.3F/day | GDD score x 0.7 |
+| Stable or warming | No penalty |
+
+**Freeze damage:** If soil was warm (>45F) at any point in the forecast window, then dropped below freezing (32F) in the last 4 days, primordia that were developing may be damaged or killed. This applies a 0.6x penalty to GDD score.
+
+The freeze penalty only triggers if there was prior warmth — soil that was never above 45F hasn't started growing primordia, so a freeze is not "damage," it's just continued cold.
+
+*These modifiers stack multiplicatively.* A site with strong cooling + freeze after warmth could see GDD score reduced to ~30% of its raw value (0.5 x 0.6 = 0.3).
 
 ---
 

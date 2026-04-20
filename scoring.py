@@ -258,6 +258,28 @@ def score_burn_site(fire: dict, weather: dict, elev: float | None,
         details["soil_deltas"] = deltas
         details["soil_temps_raw"] = [round(t, 1) for t in soil_temps]
 
+    # Trend modifier: cooling reduces GDD score, warming keeps it
+    # Rationale: accumulated heat matters, but if temps are dropping
+    # the growth stalls and the GDD "bank" isn't being spent productively
+    if len(trend_temps) >= 6:
+        if trend_per_day < -0.3:
+            gdd_score = round(gdd_score * 0.5)   # strong cooling = halve GDD credit
+            details["gdd_modifier"] = "cooling penalty (x0.5)"
+        elif trend_per_day < -0.1:
+            gdd_score = round(gdd_score * 0.7)   # mild cooling
+            details["gdd_modifier"] = "cooling penalty (x0.7)"
+
+    # Freeze damage: if soil was warm (>45F) then dropped below freezing (32F),
+    # primordia may be damaged. Check recent soil temps for freeze events
+    # after warmth.
+    if len(soil_temps) >= 4:
+        had_warmth = any(t >= 45 for t in soil_temps[:-3])
+        recent_freeze = any(t <= 32 for t in soil_temps[-4:])
+        if had_warmth and recent_freeze:
+            freeze_penalty = 0.6
+            gdd_score = round(gdd_score * freeze_penalty)
+            details["freeze_damage"] = "FREEZE after warmth — primordia at risk"
+
     scores["soil_gdd"] = round(gdd_score)
 
     # ══════════════════════════════════════════════════════════════════

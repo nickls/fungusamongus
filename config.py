@@ -7,7 +7,7 @@ To experiment with different scoring algorithms:
   3. Run: python morel_finder.py --config config_experimental.py
 """
 
-ALGO_VERSION = "0.6.0"
+ALGO_VERSION = "0.6.1"
 # 0.1.0 — Fixed zone scoring with fire proximity
 # 0.2.0 — Burn-location-based scoring, PFIRS integration
 # 0.3.0 — Moisture gate / soil temp trigger model, warming trend detection,

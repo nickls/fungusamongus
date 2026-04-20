@@ -193,6 +193,56 @@ class TestSoilGDD:
         assert result["scores"]["soil_gdd"] >= 0
         assert "soil_gdd" in result["details"]
 
+    def test_cooling_trend_reduces_gdd_score(self):
+        """GDD score should be penalized when soil temp is trending downward."""
+        weather_warming = make_weather(
+            soil_temps=[45, 47, 49, 50, 51, 52, 53, 54, 55, 55, 55, 55, 55, 55],
+            highs=[60] * 14, lows=[38] * 14, precip_14d=2.0,
+        )
+        weather_warming["hist_soil_temp"] = [40, 41, 42, 43, 44, 44, 45, 45, 46, 46,
+                                             47, 47, 48, 48, 49, 49, 50, 50, 50, 50,
+                                             51, 51, 51, 52, 52, 52, 53, 53, 53, 53]
+        weather_cooling = make_weather(
+            soil_temps=[55, 54, 52, 50, 48, 46, 44, 43, 42, 41, 40, 40, 40, 40],
+            highs=[50] * 14, lows=[30] * 14, precip_14d=2.0,
+        )
+        weather_cooling["hist_soil_temp"] = [55, 55, 54, 54, 53, 53, 52, 52, 51, 51,
+                                             50, 50, 50, 49, 49, 48, 48, 47, 47, 46,
+                                             46, 45, 45, 44, 44, 43, 43, 42, 42, 42]
+        fire = make_fire()
+        r_warm = score_burn_site(fire, weather_warming, 5500, "morel", GOOD_TERRAIN)
+        r_cool = score_burn_site(fire, weather_cooling, 5500, "morel", GOOD_TERRAIN)
+        # Both have similar total GDD but cooling should score lower
+        assert r_warm["scores"]["soil_gdd"] > r_cool["scores"]["soil_gdd"], \
+            f"Warming GDD {r_warm['scores']['soil_gdd']} should beat cooling {r_cool['scores']['soil_gdd']}"
+
+    def test_freeze_after_warmth_penalizes(self):
+        """Soil at 55F then dropping to 30F should trigger freeze damage penalty."""
+        weather = make_weather(
+            soil_temps=[50, 52, 54, 55, 55, 55, 55, 55, 40, 35, 30, 28, 32, 38],
+            highs=[60] * 14, lows=[35] * 14, precip_14d=2.0,
+        )
+        weather["hist_soil_temp"] = [50] * 30
+        fire = make_fire()
+        result = score_burn_site(fire, weather, 5500, "morel", GOOD_TERRAIN)
+        assert "freeze_damage" in result["details"], \
+            "Should detect freeze after warmth"
+        # Score should be reduced
+        assert result["scores"]["soil_gdd"] < 20, \
+            f"Freeze-damaged GDD scored {result['scores']['soil_gdd']} — expected <20"
+
+    def test_no_freeze_penalty_without_prior_warmth(self):
+        """Cold soil that never warmed up shouldn't get freeze 'damage' — it was never growing."""
+        weather = make_weather(
+            soil_temps=[35, 34, 33, 32, 31, 30, 30, 30, 30, 30, 30, 30, 30, 30],
+            highs=[40] * 14, lows=[25] * 14, precip_14d=1.0,
+        )
+        weather["hist_soil_temp"] = [33] * 30
+        fire = make_fire()
+        result = score_burn_site(fire, weather, 5500, "morel", GOOD_TERRAIN)
+        assert "freeze_damage" not in result["details"], \
+            "No freeze damage if soil was never warm enough to start growth"
+
     def test_trend_uses_full_history_not_just_forecast(self):
         """Trend should use full hist+forecast, not just 14-day forecast.
         Bug: short forecast window with high variance inflated slope to +2.3F/day
