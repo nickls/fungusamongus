@@ -782,6 +782,126 @@ class TestIntegration:
         assert 0 <= result["total"] <= 105
         assert result["details"].get("soil_trend_per_day") is not None
 
+    def test_real_prosser_creek(self):
+        """Prosser Creek: moderate soil, snow clearing, 4 rain events."""
+        weather = make_weather(
+            soil_temps=[53, 57, 59, 61, 66, 74, 68, 66, 42, 51, 69, 69, 66, 60],
+            highs=[44, 47, 49, 48, 53, 62, 59, 57, 42, 41, 56, 61, 54, 48],
+            lows=[22, 29, 32, 31, 27, 28, 35, 39, 27, 23, 22, 33, 37, 31],
+            precip_14d=1.4,
+            snow_depths=[0.8, 0.3, 0, 0, 0, 0, 0, 0, 0.1, 0.1, 0.1, 0, 0, 0],
+        )
+        weather["hist_soil_temp"] = [40, 41, 45, 46, 48, 50, 52, 48, 45, 43,
+                                     42, 44, 46, 48, 50, 52, 53, 50, 48, 46,
+                                     48, 45, 38, 37, 46, 46, 48, 48, 54, 54]
+        weather["hist_precip"] = [0]*20 + [0.18, 0.55, 0.62, 0.02, 0, 0, 0.01, 0, 0, 0]
+        fire = make_fire(burn_type="Underburn", acres=17, months_ago=6)
+        result = score_burn_site(fire, weather, 5734, "morel", GOOD_TERRAIN)
+        assert 40 <= result["total"] <= 90
+        # Should have rain events detected
+        assert result["details"].get("rain_events_30d", 0) >= 1 or "rain_events" in result["details"]
+
+    def test_real_soda_springs_deep_snow(self):
+        """Soda Springs: high elevation, still has 2.7in snow, cold soil history."""
+        weather = make_weather(
+            soil_temps=[47, 51, 50, 54, 59, 65, 62, 58, 35, 43, 61, 61, 59, 54],
+            highs=[38, 39, 40, 39, 44, 50, 48, 45, 35, 32, 43, 48, 43, 38],
+            lows=[25, 24, 27, 20, 19, 30, 32, 32, 24, 22, 16, 25, 29, 26],
+            precip_14d=3.0,
+            snow_depths=[2.7, 2.1, 1.8, 1.5, 1.2, 0.9, 0.5, 0.3, 1.2, 1.2, 0.6, 0.2, 0.1, 0],
+        )
+        weather["hist_soil_temp"] = [33, 33, 33, 34, 34, 35, 35, 34, 33, 33,
+                                     34, 34, 35, 36, 36, 35, 34, 34, 33, 33,
+                                     39, 34, 33, 33, 33, 34, 34, 34, 34, 40]
+        fire = make_fire(burn_type="Machine Pile", acres=18, months_ago=3)
+        result = score_burn_site(fire, weather, 6825, "morel", GOOD_TERRAIN)
+        # Snow mostly melted (0.3in left at day 0), soil warming to 47F.
+        # Low GDD from cold history (33F avg) should hold score down, but
+        # active melt + moisture means it's coming into season.
+        # Verify GDD is low (cold history) even if total is moderate
+        # GDD should be moderate — cold 30-day history (33F avg) but warm forecast
+        # pushes total GDD up. Shouldn't be max though.
+        assert result["scores"]["soil_gdd"] <= 20, \
+            f"Cold-history Soda Springs GDD score {result['scores']['soil_gdd']} — expected <=20"
+
+    def test_real_dog_valley_warm_dry(self):
+        """Dog Valley: warm soil (70F), no snow, but only 1 rain event — drier."""
+        weather = make_weather(
+            soil_temps=[56, 60, 59, 57, 63, 70, 69, 68, 47, 55, 67, 70, 67, 60],
+            highs=[51, 56, 58, 52, 56, 68, 67, 65, 48, 48, 59, 62, 59, 53],
+            lows=[33, 34, 41, 33, 29, 33, 47, 49, 34, 31, 31, 39, 41, 37],
+            precip_14d=0.9,
+            snow_depths=[0] * 14,
+        )
+        weather["hist_soil_temp"] = [50, 52, 55, 58, 60, 58, 55, 53, 55, 58,
+                                     60, 62, 60, 58, 55, 58, 60, 62, 60, 58,
+                                     63, 62, 56, 56, 62, 60, 60, 57, 64, 70]
+        weather["hist_precip"] = [0]*20 + [0.54, 0.10, 0.27, 0, 0, 0, 0.02, 0, 0, 0]
+        fire = make_fire(burn_type="Underburn", acres=117, months_ago=0.3)
+        result = score_burn_site(fire, weather, 4874, "morel",
+                                 {"slope": 12, "aspect": 185})
+        # Warm but dry — moisture should be the limiting factor
+        assert result["scores"]["recent_moisture"] <= 12, \
+            f"Dry Dog Valley moisture {result['scores']['recent_moisture']} — expected <=12"
+
+    def test_real_nevada_city_low_elevation(self):
+        """Nevada City: 2536ft, too low for April band, but warm + wet."""
+        weather = make_weather(
+            soil_temps=[57, 63, 63, 66, 71, 74, 74, 64, 50, 59, 69, 71, 70, 62],
+            highs=[55, 57, 60, 60, 62, 67, 68, 60, 48, 52, 62, 65, 59, 51],
+            lows=[39, 42, 47, 45, 41, 48, 51, 46, 43, 39, 37, 42, 46, 43],
+            precip_14d=3.1,
+            snow_depths=[0] * 14,
+        )
+        weather["hist_soil_temp"] = [48, 50, 52, 55, 58, 60, 58, 55, 53, 50,
+                                     48, 50, 52, 55, 58, 60, 62, 60, 58, 55,
+                                     54, 50, 43, 53, 55, 57, 60, 62, 64, 64]
+        fire = make_fire(acres=20, months_ago=5)
+        result = score_burn_site(fire, weather, 2536, "morel", GOOD_TERRAIN)
+        # Too low elevation for April — sun_aspect should lose elev points
+        assert result["scores"]["sun_aspect"] <= 7, \
+            f"2536ft in April sun_aspect {result['scores']['sun_aspect']} — expected <=7"
+
+    def test_real_south_lake_cold_snap(self):
+        """South Lake: forecast shows soil dropping from 66 to 39 (freeze risk)."""
+        weather = make_weather(
+            soil_temps=[45, 52, 51, 54, 60, 66, 63, 62, 39, 49, 61, 64, 61, 57],
+            highs=[41, 47, 48, 48, 49, 58, 58, 56, 43, 41, 52, 57, 54, 50],
+            lows=[22, 24, 33, 30, 25, 30, 35, 41, 26, 22, 28, 35, 37, 34],
+            precip_14d=1.9,
+            snow_depths=[0.9, 0.4, 0, 0, 0, 0, 0, 0, 0.4, 0.4, 0.1, 0, 0, 0],
+        )
+        weather["hist_soil_temp"] = [40, 42, 45, 48, 50, 48, 45, 42, 40, 42,
+                                     45, 48, 50, 52, 50, 48, 45, 42, 45, 48,
+                                     50, 44, 41, 41, 41, 41, 41, 39, 48, 53]
+        fire = make_fire(months_ago=5)
+        # Score day 0 (warm, 62F soil) vs day 1 (cold snap, 39F at index 8)
+        from scoring import make_day_weather
+        day0_wx = make_day_weather(weather, 0)
+        day1_wx = make_day_weather(weather, 1)  # index 8 = 39F
+        r0 = score_burn_site(fire, day0_wx, 6235, "morel", GOOD_TERRAIN)
+        r1 = score_burn_site(fire, day1_wx, 6235, "morel", GOOD_TERRAIN)
+        assert r0["total"] > r1["total"], \
+            f"Warm day 0 ({r0['total']}) should beat cold snap day 1 ({r1['total']})"
+
+    def test_real_stampede_moderate(self):
+        """Stampede: moderate conditions, soil 54F, some snow clearing."""
+        weather = make_weather(
+            soil_temps=[53, 61, 57, 57, 64, 72, 66, 66, 44, 54, 65, 68, 65, 60],
+            highs=[43, 49, 51, 49, 54, 63, 61, 58, 41, 40, 56, 60, 53, 48],
+            lows=[25, 31, 34, 30, 28, 30, 37, 40, 29, 26, 22, 32, 36, 30],
+            precip_14d=0.8,
+            snow_depths=[0.7, 0.2, 0, 0, 0, 0, 0, 0, 0, 0.1, 0.1, 0, 0, 0],
+        )
+        weather["hist_soil_temp"] = [42, 43, 45, 46, 48, 50, 48, 45, 43, 42,
+                                     44, 46, 48, 50, 52, 50, 48, 46, 48, 50,
+                                     48, 45, 37, 37, 45, 47, 47, 46, 54, 54]
+        fire = make_fire(burn_type="Hand Pile", acres=20, months_ago=5)
+        result = score_burn_site(fire, weather, 6055, "morel", GOOD_TERRAIN)
+        # Should be a reasonable mid-range score
+        assert 45 <= result["total"] <= 85, \
+            f"Stampede scored {result['total']} — expected 45-85"
+
     def test_score_range_is_0_to_100(self):
         """No scenario should produce a score outside 0-100 (plus terrain bonus)."""
         for soil in [30, 45, 52, 65]:

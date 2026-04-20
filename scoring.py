@@ -43,8 +43,14 @@ def extract_weather_details(weather: dict) -> dict:
 
     snow_depth = weather.get("forecast_snow_depth", [])
     if snow_depth and len(snow_depth) >= 3:
-        d["snow_past"] = np.mean(snow_depth[:-1]) if len(snow_depth) > 1 else snow_depth[0]
-        d["snow_now"] = snow_depth[-1]  # target day's snow depth
+        # If full 14-day array, "today" is index 7. If windowed, last element.
+        if len(snow_depth) >= 12:
+            today_idx = min(7, len(snow_depth) - 1)
+            d["snow_now"] = snow_depth[today_idx]
+            d["snow_past"] = np.mean(snow_depth[:today_idx]) if today_idx > 0 else snow_depth[0]
+        else:
+            d["snow_now"] = snow_depth[-1]
+            d["snow_past"] = np.mean(snow_depth[:-1]) if len(snow_depth) > 1 else snow_depth[0]
         d["snow_depth_now"] = f"{d['snow_now']:.1f}in"
         if d["snow_past"] > 1.0 and d["snow_now"] < d["snow_past"] * 0.5:
             d["snow_status"] = f"ACTIVE MELT ({d['snow_past']:.0f}->{d['snow_now']:.0f}in)"
@@ -203,6 +209,17 @@ def score_burn_site(fire: dict, weather: dict, elev: float | None,
     else:
         soil_score = round(max_pts * 0.3)  # no data, assume mediocre
         details["soil_gate"] = "no soil data"
+
+    # Snow cover suppresses soil threshold — soil temp readings under
+    # snowpack are unreliable (model measures air-skin, not ground under snow)
+    snow_now = wx.get("snow_now", 0) or 0
+    if snow_now > 2.0:
+        soil_score = min(soil_score, round(max_pts * 0.15))
+        soil_gate_factor = min(soil_gate_factor, 0.4)
+        details["soil_gate"] = f"SNOW COVER ({snow_now:.0f}in)"
+    elif snow_now > 0.5:
+        soil_score = min(soil_score, round(max_pts * 0.5))
+        details["snow_suppression"] = f"partial ({snow_now:.1f}in)"
 
     scores["soil_threshold"] = soil_score
 
