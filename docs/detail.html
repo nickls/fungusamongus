@@ -390,7 +390,7 @@ async function init() {
             type: "linear", position: "right",
             title: { display: true, text: "Precip / Snow (in)", color: "#5bc0de" },
             ticks: { color: "#888" }, grid: { drawOnChartArea: false },
-            min: 0,
+            min: 0, max: Math.max(3, ...precipFull.filter(v=>v!=null), ...snowFull.filter(v=>v!=null)),
           },
           yRate: {
             type: "linear", position: "right",
