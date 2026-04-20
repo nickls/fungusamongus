@@ -11,6 +11,7 @@ morel_finder.py    # Runner/orchestrator (~130 lines)
 config.py          # ALL scoring parameters — weights, thresholds, curves
 scoring.py         # Config-driven scoring engine
 mapping.py         # Folium maps, matplotlib charts, text reports
+ALGO.md            # Full scoring algorithm documentation — KEEP UPDATED
 utils/
   cache.py         # JSON file cache with TTL
   http.py          # fetch_json wrapper
@@ -30,7 +31,7 @@ utils/
 
 ## When making changes
 
-- **Changing scoring logic**: Edit `scoring.py`. All thresholds come from `config.py` via the mushroom type profile. If adding a new scoring factor, add the weight to `MOREL_PROFILE["weights"]` in config.py.
+- **Changing scoring logic**: Edit `scoring.py`. All thresholds come from `config.py` via the mushroom type profile. If adding a new scoring factor, add the weight to `MOREL_PROFILE["weights"]` in config.py. **IMPORTANT: Update ALGO.md whenever scoring logic, weights, thresholds, or factors change.** ALGO.md is the canonical documentation of how the algorithm works — it must stay in sync with the code.
 - **Changing map appearance**: Edit `mapping.py`. Heatmap intensity, marker styles, legend are all there.
 - **Adding a data source**: Add to `utils/`, import in `morel_finder.py`'s `gather_fire_data()`.
 - **Adding a mushroom type**: Add profile to `MUSHROOM_TYPES` in `config.py`. Will need different candidate generation (not burn sites) — that logic goes in `morel_finder.py`.
