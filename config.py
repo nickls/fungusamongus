@@ -7,11 +7,14 @@ To experiment with different scoring algorithms:
   3. Run: python morel_finder.py --config config_experimental.py
 """
 
-ALGO_VERSION = "0.3.0"
+ALGO_VERSION = "0.4.0"
 # 0.1.0 — Fixed zone scoring with fire proximity
 # 0.2.0 — Burn-location-based scoring, PFIRS integration
 # 0.3.0 — Moisture gate / soil temp trigger model, warming trend detection,
 #          config-driven scoring, terrain (slope/aspect), refactored modules
+# 0.4.0 — Soil temp as hard gate (not just weighted), warming trend is biggest
+#          temp factor (35%), recency curve refined (0-2mo penalty), rating
+#          thresholds tightened (80+=excellent, <50 hidden)
 
 from pathlib import Path
 
@@ -71,11 +74,13 @@ MOREL_PROFILE = {
     "temp_ideal_low": (30, 50),    # daily low F
     "soil_temp_ideal": (45, 60),   # soil temp F
     # Sub-weight distribution within temperature (must sum to 1.0):
-    # Soil temp is the real trigger — morels won't fruit until soil hits 47-55F
+    # Warming trend is the actual trigger — more predictive than any single reading.
+    # "soil" here covers threshold only; trend is scored separately at "soil_trend".
     "temp_sub_weights": {
-        "soil": 0.45,    # soil temp is THE trigger
-        "high": 0.35,    # daily high = warming signal
-        "low": 0.20,     # daily low = freeze risk
+        "soil_trend": 0.35,  # rising soil temps = THE trigger
+        "high": 0.30,       # daily high = drives soil warming
+        "low": 0.20,        # daily low = freeze risk
+        "soil": 0.15,       # soil threshold (is it 45-60F?)
     },
 
     # ── Moisture sub-scoring ──

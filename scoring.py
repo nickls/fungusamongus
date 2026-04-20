@@ -94,57 +94,71 @@ def score_burn_site(fire: dict, weather: dict, elev: float | None,
     details.update({k: v for k, v in wx.items() if isinstance(v, str)})
 
     # ── Temperature ──
-    max_pts = w.get("temperature", 20)
-    sub = mt.get("temp_sub_weights", {"high": 0.5, "low": 0.3, "soil": 0.2})
+    max_pts = w.get("temperature", 25)
+    sub = mt.get("temp_sub_weights", {"soil_trend": 0.35, "high": 0.30, "low": 0.20, "soil": 0.15})
     temp_score = 0
     avg_high = wx.get("avg_high")
     avg_low = wx.get("avg_low")
     avg_soil = wx.get("avg_soil")
 
+    # Soil temp is a GATE — if soil is too cold, entire temp score is capped
+    soil_gate_open = True
+    soil_gate_factor = 1.0
+    if avg_soil is not None:
+        lo, hi = mt["soil_temp_ideal"]
+        if avg_soil < lo - 7:
+            # Way too cold — soil not even close. Cap total temp score hard.
+            soil_gate_open = False
+            soil_gate_factor = 0.1
+            details["soil_gate"] = f"BLOCKED ({avg_soil:.0f}F < {lo}F)"
+        elif avg_soil < lo:
+            # Below threshold but approaching — partial credit
+            soil_gate_factor = 0.4
+            details["soil_gate"] = f"approaching ({avg_soil:.0f}F)"
+        else:
+            # Threshold met
+            temp_score += max_pts * sub.get("soil", 0.15)
+            if avg_soil > hi:
+                temp_score += max_pts * sub.get("soil", 0.15) * 0.3  # past peak but ok
+
     if avg_high is not None:
         lo, hi = mt["temp_ideal_high"]
         ok_lo, ok_hi = mt["temp_ok_high"]
         if lo <= avg_high <= hi:
-            temp_score += max_pts * sub["high"]
+            temp_score += max_pts * sub.get("high", 0.30)
         elif ok_lo <= avg_high <= ok_hi:
-            temp_score += max_pts * sub["high"] * 0.5
+            temp_score += max_pts * sub.get("high", 0.30) * 0.5
 
     if avg_low is not None:
         lo, hi = mt["temp_ideal_low"]
         if lo <= avg_low <= hi:
-            temp_score += max_pts * sub["low"]
+            temp_score += max_pts * sub.get("low", 0.20)
         elif lo - 5 <= avg_low <= hi + 5:
-            temp_score += max_pts * sub["low"] * 0.5
+            temp_score += max_pts * sub.get("low", 0.20) * 0.5
 
-    if avg_soil is not None:
-        lo, hi = mt["soil_temp_ideal"]
-        if lo <= avg_soil <= hi:
-            temp_score += max_pts * sub["soil"] * 0.6  # threshold met
-        elif lo - 5 <= avg_soil <= hi + 5:
-            temp_score += max_pts * sub["soil"] * 0.3
-
-    # Warming trend bonus — rising soil temps are the actual trigger
-    # Compare first half vs second half of soil temp series
+    # Warming trend — the actual trigger, biggest piece of temp score
     soil_temps = weather.get("forecast_soil_temp", [])
+    trend_sub = sub.get("soil_trend", 0.35)
     if len(soil_temps) >= 6:
         first_half = np.mean(soil_temps[:len(soil_temps)//2])
         second_half = np.mean(soil_temps[len(soil_temps)//2:])
-        trend = second_half - first_half  # positive = warming
+        trend = second_half - first_half
         if trend > 3:
-            temp_score += max_pts * sub["soil"] * 0.4  # strong warming
+            temp_score += max_pts * trend_sub
             details["soil_trend"] = f"WARMING (+{trend:.0f}F)"
         elif trend > 1:
-            temp_score += max_pts * sub["soil"] * 0.25  # moderate warming
+            temp_score += max_pts * trend_sub * 0.65
             details["soil_trend"] = f"warming (+{trend:.0f}F)"
         elif trend > -1:
-            temp_score += max_pts * sub["soil"] * 0.1  # stable
+            temp_score += max_pts * trend_sub * 0.25
             details["soil_trend"] = "stable"
         else:
             details["soil_trend"] = f"cooling ({trend:.0f}F)"
-            # cooling = bad, no bonus
     elif avg_soil is not None:
         details["soil_trend"] = "insufficient data"
 
+    # Apply soil gate — if soil is too cold, scale down entire temp score
+    temp_score = temp_score * soil_gate_factor
     scores["temperature"] = min(round(temp_score), max_pts)
 
     # ── Moisture ──
