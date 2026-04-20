@@ -21,6 +21,8 @@ import pandas as pd
 from config import (ALDER_CREEK, TAHOE_BASIN_CENTER, SEARCH_RADIUS_KM,
                     LOCAL_RADIUS_KM, CACHE_DIR, MUSHROOM_TYPES, ALGO_VERSION)
 from scoring import score_burn_site, score_burn_multiday
+from phase_scoring import (build_timeline, extract_features, classify_phase,
+                           score_readiness, score_potential)
 from mapping import build_map, build_chart, print_report, rating
 from utils.weather import get_weather
 from utils.elevation import get_elevation_ft, get_slope_aspect, get_best_aspect
@@ -39,7 +41,7 @@ def haversine_km(lat1, lon1, lat2, lon2):
 
 
 def score_burn(fire, mushroom_type="morel"):
-    """Fetch weather + elevation + terrain for a burn. Score for day 0 + days 0-7."""
+    """Fetch weather + elevation + terrain for a burn. Compute phase + legacy scores."""
     lat = fire.get("centroid_lat")
     lon = fire.get("centroid_lon")
     if lat is None or lon is None:
@@ -50,12 +52,35 @@ def score_burn(fire, mushroom_type="morel"):
     name = fire.get("name", "?")
     zone = {"name": name, "lat": lat, "lon": lon, "elevation_ft": elev,
             "slope": terrain.get("slope"), "aspect": terrain.get("aspect")}
-    # Day 0 score (current conditions) — used for reports/folium maps
+
+    # Legacy scoring (kept for folium maps + backward compat)
     result = score_burn_site(fire, weather, elev, mushroom_type, terrain=terrain)
-    # Multi-day scores — used for SPA/JSON export
     day_scores = score_burn_multiday(fire, weather, elev, terrain, mushroom_type)
-    return {"zone": zone, "fire": fire, "weather": weather, "result": result,
-            "day_scores": day_scores}
+
+    # Phase scoring (v0.7.0)
+    config = MUSHROOM_TYPES.get(mushroom_type, {})
+    timeline = build_timeline(weather, config)
+    potential = score_potential(fire, elev, terrain, mushroom_type)
+
+    phase_days = []
+    for d in range(8):
+        target = 30 + d  # 30 = today in 44-day timeline
+        features = extract_features(timeline, weather, target, config)
+        readiness = score_readiness(features)
+        phase = classify_phase(features)
+        phase_days.append({
+            "day": d,
+            "readiness": readiness,
+            "phase": phase,
+            "status": timeline[target] if target < len(timeline) else "BAD",
+            "start_days": features["start_days"],
+            "grow_days": features["grow_days"],
+            "max_bad_streak": features["max_bad_streak"],
+        })
+
+    return {"zone": zone, "fire": fire, "weather": weather,
+            "result": result, "day_scores": day_scores,
+            "potential": potential, "timeline": timeline, "phase_days": phase_days}
 
 
 def export_json(results, all_fires, run_date):
@@ -105,6 +130,11 @@ def export_json(results, all_fires, run_date):
             if vals:
                 history[key] = [round(v, 1) if v is not None else None for v in vals]
 
+        # Phase scoring data
+        pot = r.get("potential", {})
+        phase_days = r.get("phase_days", [])
+        tl = r.get("timeline", [])
+
         data["burns"].append({
             "name": z["name"],
             "lat": z["lat"],
@@ -115,6 +145,12 @@ def export_json(results, all_fires, run_date):
             "elevation_ft": z.get("elevation_ft"),
             "slope": z.get("slope"),
             "aspect": z.get("aspect"),
+            # Phase scoring (v0.7.0)
+            "potential": pot.get("potential", 0),
+            "potential_scores": pot.get("scores", {}),
+            "timeline": tl,
+            "phase_days": phase_days,
+            # Legacy per-day scores
             "days": days,
         })
         # Collect history separately to keep latest.json lean

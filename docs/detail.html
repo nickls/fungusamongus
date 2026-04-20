@@ -98,6 +98,20 @@ async function init() {
   const ratingColor = total >= 80 ? "purple" : total >= 70 ? "green" : total >= 50 ? "orange" : "red";
   const ratingLabel = total >= 80 ? "EXCELLENT" : total >= 70 ? "GOOD" : total >= 50 ? "FAIR" : "POOR";
 
+  // Phase data
+  const pd = (burn.phase_days || [])[day] || {};
+  const phase = pd.phase || "?";
+  const readiness = pd.readiness || 0;
+  const potential = burn.potential || 0;
+  const phaseColors = { EMERGING: "#27ae60", GROWING: "#f39c12", WAITING: "#e67e22", TOO_EARLY: "#95a5a6" };
+  const phaseColor = phaseColors[phase] || "#888";
+  const phaseAdvice = {
+    EMERGING: "GO NOW — conditions have built up, morels are emerging or about to",
+    GROWING: "Go soon — growth accumulating, scout for early ones",
+    WAITING: "Not yet — start happened but not enough grow days",
+    TOO_EARLY: "No start event detected — conditions haven't triggered",
+  };
+
   let html = "";
 
   // Header
@@ -107,6 +121,56 @@ async function init() {
   html += ` | <a href="https://www.google.com/maps?q=${burn.lat},${burn.lon}" target="_blank">Google Maps</a>`;
   html += ` | Algo ${data.algo_version} | Run ${data.run_date}`;
   html += `</div>`;
+
+  // Phase hero
+  html += `<div style="display:flex;gap:16px;align-items:center;margin:16px 0;padding:12px 16px;background:${phaseColor}15;border-left:4px solid ${phaseColor};border-radius:0 8px 8px 0;">`;
+  html += `<div style="text-align:center;">`;
+  html += `<div style="font-size:28px;font-weight:bold;color:${phaseColor};">${phase}</div>`;
+  html += `<div style="font-size:11px;color:#888;">${phaseAdvice[phase] || ""}</div>`;
+  html += `</div>`;
+  html += `<div style="margin-left:auto;text-align:right;font-size:12px;color:#aaa;">`;
+  html += `Potential: <b>${potential}</b><br>`;
+  html += `Readiness: <b>${readiness}</b><br>`;
+  html += `Grow days: <b>${pd.grow_days || 0}</b> | Start days: <b>${pd.start_days || 0}</b>`;
+  html += `</div></div>`;
+
+  // Timeline strip — 44 colored blocks
+  const tl = burn.timeline || [];
+  if (tl.length > 0) {
+    const statusColors = { START: "#27ae60", START_GROW: "#2ecc71", GROW: "#3498db", BAD: "#e74c3c" };
+    html += `<div class="chart-card" style="grid-column:1/-1;">`;
+    html += `<h3>44-Day Timeline — <span style="color:#27ae60">START</span> <span style="color:#3498db">GROW</span> <span style="color:#e74c3c">BAD</span></h3>`;
+    html += `<div style="display:flex;gap:1px;height:24px;">`;
+    for (let i = 0; i < tl.length; i++) {
+      const c = statusColors[tl[i]] || "#333";
+      const isToday = i === 30;
+      const border = isToday ? "outline:2px solid #e94560;" : "";
+      html += `<div style="flex:1;background:${c};border-radius:2px;${border}" title="Day ${i-30}: ${tl[i]}"></div>`;
+    }
+    html += `</div>`;
+    html += `<div style="display:flex;justify-content:space-between;font-size:9px;color:#555;margin-top:2px;">`;
+    html += `<span>-30 days</span><span style="color:#e94560;">today</span><span>+7 days</span>`;
+    html += `</div></div>`;
+  }
+
+  // 8-day phase forecast
+  if (burn.phase_days && burn.phase_days.length > 0) {
+    html += `<div class="chart-card" style="grid-column:1/-1;">`;
+    html += `<h3>8-Day Phase Forecast</h3>`;
+    html += `<div style="display:flex;gap:4px;">`;
+    for (let i = 0; i < burn.phase_days.length; i++) {
+      const pd2 = burn.phase_days[i];
+      const pc = phaseColors[pd2.phase] || "#888";
+      const sel = i === day;
+      html += `<div style="flex:1;padding:6px 2px;text-align:center;background:${sel ? pc+'30' : '#16213e'};border:1px solid ${sel ? pc : '#0f3460'};border-radius:4px;">`;
+      html += `<div style="font-size:10px;color:#888;">${fmtDate(burn.days[i]?.date, i)}</div>`;
+      html += `<div style="font-size:14px;font-weight:bold;color:${pc};">${pd2.readiness}</div>`;
+      html += `<div style="font-size:9px;color:${pc};">${pd2.phase}</div>`;
+      html += `<div style="font-size:9px;color:#666;">${pd2.grow_days}g</div>`;
+      html += `</div>`;
+    }
+    html += `</div></div>`;
+  }
 
   // Score hero
   html += `<div class="score-hero">`;

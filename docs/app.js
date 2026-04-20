@@ -319,6 +319,12 @@ function miniChart(values, label, unit, color, highlightIdx, showLabels) {
 
 function makePopup(burn, day, burnIdx) {
   const totalColor = day.total >= 80 ? "purple" : day.total >= 70 ? "green" : "orange";
+  const pd = (burn.phase_days || [])[selectedDay] || {};
+  const phase = pd.phase || "?";
+  const readiness = pd.readiness || 0;
+  const potential = burn.potential || 0;
+  const phaseColors = { EMERGING: "#27ae60", GROWING: "#f39c12", WAITING: "#e67e22", TOO_EARLY: "#95a5a6" };
+  const phaseColor = phaseColors[phase] || "#888";
 
   // Header — name links to detail page
   let html = `<div class="burn-popup" style="min-width:280px;max-width:340px;">`;
@@ -327,6 +333,14 @@ function makePopup(burn, day, burnIdx) {
   html += `${(burn.acres||0).toFixed(0)}ac | ${burn.burn_type} | ${burn.elevation_ft?.toFixed(0)||"?"}ft`;
   if (burn.slope != null) html += ` | ${burn.slope.toFixed(0)}deg ${aspectDir(burn.aspect)}`;
   html += ` | <a href="https://www.google.com/maps?q=${burn.lat},${burn.lon}" target="_blank" style="color:#53a8b6;">Map</a>`;
+  html += `</div>`;
+
+  // Phase banner
+  html += `<div style="display:flex;gap:8px;align-items:center;margin:6px 0;padding:6px 8px;background:${phaseColor}20;border-left:3px solid ${phaseColor};border-radius:0 4px 4px 0;">`;
+  html += `<span style="font-size:11px;font-weight:bold;color:${phaseColor};">${phase}</span>`;
+  html += `<span style="font-size:10px;color:#aaa;">Potential: ${potential}</span>`;
+  html += `<span style="font-size:10px;color:#aaa;">Readiness: ${readiness}</span>`;
+  if (pd.grow_days) html += `<span style="font-size:10px;color:#888;">${pd.grow_days} grow days</span>`;
   html += `</div>`;
 
   // Score + factor breakdown as colored blocks
