@@ -7,7 +7,7 @@ To experiment with different scoring algorithms:
   3. Run: python morel_finder.py --config config_experimental.py
 """
 
-ALGO_VERSION = "0.4.0"
+ALGO_VERSION = "0.5.0"
 # 0.1.0 — Fixed zone scoring with fire proximity
 # 0.2.0 — Burn-location-based scoring, PFIRS integration
 # 0.3.0 — Moisture gate / soil temp trigger model, warming trend detection,
@@ -15,6 +15,11 @@ ALGO_VERSION = "0.4.0"
 # 0.4.0 — Soil temp as hard gate (not just weighted), warming trend is biggest
 #          temp factor (35%), recency curve refined (0-2mo penalty), rating
 #          thresholds tightened (80+=excellent, <50 hidden)
+# 0.5.0 — 6-factor model (soil threshold, warming trend, moisture, burn quality,
+#          sun/aspect, air temp). Per-day scoring (days 0-7) with proper windowing.
+#          SPA frontend with Leaflet, day picker, filter sliders, heatmap toggle.
+#          Linear regression for trend. Soil gate applies to all factors.
+#          39 unit tests. Bug fixes: target window, gate application, recency curve.
 
 from pathlib import Path
 

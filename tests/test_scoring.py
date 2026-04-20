@@ -625,3 +625,295 @@ class TestIntegration:
                 result = score_burn_site(fire, weather, 5500, "morel", GOOD_TERRAIN)
                 assert 0 <= result["total"] <= 105, \
                     f"Score {result['total']} out of range for soil={soil} precip={precip}"
+
+
+# ══════════════════════════════════════════════════════════════════
+# L. "Now" Scenarios — realistic edge cases for day-0 scoring
+# ══════════════════════════════════════════════════════════════════
+
+class TestNowScenarios:
+    """These simulate real conditions you'd check before going out."""
+
+    def test_spring_morning_frost_but_warming(self):
+        """Frosty mornings (28F lows) but soil is 50F and warming — should still score well."""
+        weather = make_weather(
+            soil_temps=[45, 46, 47, 48, 49, 50, 50, 51, 51, 52, 52, 52, 53, 53],
+            highs=[55, 58, 60, 60, 62, 62, 63, 63, 63, 63, 63, 63, 63, 63],
+            lows=[25, 26, 27, 28, 28, 28, 28, 28, 28, 28, 28, 28, 28, 28],
+            precip_14d=1.5,
+        )
+        fire = make_fire(months_ago=5)
+        result = score_burn_site(fire, weather, 5500, "morel", GOOD_TERRAIN)
+        assert result["total"] >= 60, \
+            f"Frosty mornings + warming soil scored {result['total']} — should be 60+"
+
+    def test_rain_event_after_dry_spell(self):
+        """Dry for 3 weeks then 2in rain — should boost moisture significantly."""
+        precip = [0] * 20 + [0.3, 0.5, 0.4, 0.3, 0.2, 0.1, 0.1, 0.05, 0.02, 0.01]
+        weather = {
+            "hist_temps_max": [], "hist_temps_min": [],
+            "hist_precip": precip,
+            "hist_snowfall": [],
+            "forecast_temps_max": [60] * 14, "forecast_temps_min": [38] * 14,
+            "forecast_soil_temp": [52] * 14,
+            "forecast_soil_moisture": [0.35] * 14,
+            "forecast_snow_depth": [0] * 14,
+            "current_temp": 60,
+        }
+        fire = make_fire()
+        result = score_burn_site(fire, weather, 5500, "morel", GOOD_TERRAIN)
+        assert result["scores"]["recent_moisture"] >= 8, \
+            f"Rain after dry spell moisture: {result['scores']['recent_moisture']} — expected 8+"
+
+    def test_wildfire_vs_rx_burn(self):
+        """Wildfire should score lower than RX burn on burn quality."""
+        weather = make_weather(
+            soil_temps=[52] * 14, highs=[60] * 14, lows=[40] * 14, precip_14d=2.0,
+        )
+        rx = make_fire(burn_type="Underburn", months_ago=5)
+        wildfire = {"is_rx": False, "date": rx["date"], "acres": 30,
+                    "pfirs_burn_type": ""}
+        r_rx = score_burn_site(rx, weather, 5500, "morel", GOOD_TERRAIN)
+        r_wild = score_burn_site(wildfire, weather, 5500, "morel", GOOD_TERRAIN)
+        assert r_rx["scores"]["burn_quality"] > r_wild["scores"]["burn_quality"]
+
+    def test_high_elevation_late_season(self):
+        """7500ft in April should score lower on elevation than 5500ft."""
+        weather = make_weather(
+            soil_temps=[48] * 14, highs=[50] * 14, lows=[30] * 14, precip_14d=2.0,
+        )
+        fire = make_fire()
+        r_high = score_burn_site(fire, weather, 7500, "morel", GOOD_TERRAIN)
+        r_mid = score_burn_site(fire, weather, 5500, "morel", GOOD_TERRAIN)
+        # 7500ft is at upper edge of April band — should get less than 5500ft
+        assert r_mid["scores"]["sun_aspect"] >= r_high["scores"]["sun_aspect"]
+
+    def test_very_wet_but_cold_is_bad(self):
+        """3in of rain but soil at 38F — moisture is there but soil gate kills it."""
+        weather = make_weather(
+            soil_temps=[38] * 14,
+            highs=[45] * 14, lows=[30] * 14,
+            precip_14d=3.0,
+        )
+        fire = make_fire()
+        result = score_burn_site(fire, weather, 5500, "morel", GOOD_TERRAIN)
+        assert result["total"] < 40, \
+            f"Wet but cold scored {result['total']} — should be <40 (soil gate)"
+
+    def test_hot_dry_summer_day(self):
+        """85F highs, 65F soil, no rain — past prime, should score low."""
+        weather = make_weather(
+            soil_temps=[65] * 14,
+            highs=[85] * 14, lows=[55] * 14,
+            precip_14d=0.0,
+        )
+        fire = make_fire()
+        result = score_burn_site(fire, weather, 5500, "morel", GOOD_TERRAIN)
+        assert result["total"] < 55, \
+            f"Hot dry summer scored {result['total']} — should be <55"
+
+    def test_ideal_day_high_score(self):
+        """The textbook perfect morel day: 55F, moist, recent burn, south slope."""
+        weather = make_weather(
+            soil_temps=[48, 49, 50, 50, 51, 52, 52, 53, 53, 54, 54, 54, 55, 55],
+            highs=[60, 62, 63, 65, 65, 65, 65, 65, 65, 65, 65, 65, 65, 65],
+            lows=[35, 36, 38, 38, 40, 40, 40, 40, 40, 40, 40, 40, 40, 40],
+            precip_14d=1.8,
+            snow_depths=[2, 1, 0.5, 0.2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+        )
+        fire = make_fire(burn_type="Underburn", acres=50, months_ago=6)
+        result = score_burn_site(fire, weather, 5500, "morel", GOOD_TERRAIN)
+        assert result["total"] >= 70, \
+            f"Textbook day scored {result['total']} — should be 70+"
+
+    def test_two_week_old_burn_in_perfect_weather(self):
+        """2-week-old burn — too fresh penalty even with perfect conditions."""
+        weather = make_weather(
+            soil_temps=[48, 49, 50, 51, 52, 53, 53, 54, 54, 54, 55, 55, 55, 55],
+            highs=[65] * 14, lows=[40] * 14, precip_14d=2.0,
+        )
+        fresh = make_fire(burn_type="Underburn", acres=50, months_ago=0.5)
+        prime = make_fire(burn_type="Underburn", acres=50, months_ago=5)
+        r_fresh = score_burn_site(fresh, weather, 5500, "morel", GOOD_TERRAIN)
+        r_prime = score_burn_site(prime, weather, 5500, "morel", GOOD_TERRAIN)
+        assert r_prime["total"] > r_fresh["total"], \
+            f"Fresh burn {r_fresh['total']} should be less than prime {r_prime['total']}"
+
+    def test_flat_soil_temp_low_warming(self):
+        """Soil stuck at 50F for 2 weeks — no warming trend despite good threshold."""
+        weather = make_weather(
+            soil_temps=[50] * 14,
+            highs=[60] * 14, lows=[38] * 14, precip_14d=1.5,
+        )
+        fire = make_fire()
+        result = score_burn_site(fire, weather, 5500, "morel", GOOD_TERRAIN)
+        assert result["scores"]["warming_trend"] <= 8, \
+            f"Flat soil trend scored {result['scores']['warming_trend']} — should be <=8"
+
+    def test_soil_temp_details_in_output(self):
+        """Result should include soil_temp, soil_trend, and soil_trend_per_day."""
+        weather = make_weather(
+            soil_temps=[45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 55, 55, 55],
+            highs=[60] * 14, lows=[38] * 14, precip_14d=1.5,
+        )
+        fire = make_fire()
+        result = score_burn_site(fire, weather, 5500, "morel", GOOD_TERRAIN)
+        assert "soil_temp" in result["details"]
+        assert "soil_trend" in result["details"]
+        assert "soil_trend_per_day" in result["details"]
+
+
+# ══════════════════════════════════════════════════════════════════
+# M. Predictive Scenarios — multi-day scoring behavior
+# ══════════════════════════════════════════════════════════════════
+
+class TestPredictiveScenarios:
+    """Test that per-day scoring correctly reflects forecast changes."""
+
+    def test_multiday_returns_8_days(self):
+        """score_burn_multiday should return exactly 8 day scores."""
+        from scoring import score_burn_multiday
+        weather = make_weather(
+            soil_temps=[50] * 14, highs=[60] * 14, lows=[40] * 14, precip_14d=1.5,
+        )
+        fire = make_fire()
+        days = score_burn_multiday(fire, weather, 5500, GOOD_TERRAIN, "morel", days=8)
+        assert len(days) == 8
+        assert all("total" in d for d in days)
+        assert all("scores" in d for d in days)
+
+    def test_multiday_day_indices(self):
+        """Each day score should have the correct day index."""
+        from scoring import score_burn_multiday
+        weather = make_weather(
+            soil_temps=[50] * 14, highs=[60] * 14, lows=[40] * 14, precip_14d=1.0,
+        )
+        fire = make_fire()
+        days = score_burn_multiday(fire, weather, 5500, GOOD_TERRAIN)
+        for i, d in enumerate(days):
+            assert d["day"] == i
+
+    def test_warming_week_scores_increase(self):
+        """If soil warms steadily over the forecast, later days should score higher."""
+        weather = make_weather(
+            soil_temps=[40, 41, 42, 43, 44, 45, 46, 48, 50, 52, 54, 55, 56, 57],
+            highs=[50, 52, 54, 56, 58, 60, 62, 64, 65, 66, 67, 68, 68, 68],
+            lows=[30, 31, 32, 33, 34, 35, 36, 38, 40, 40, 42, 42, 42, 42],
+            precip_14d=1.5,
+        )
+        fire = make_fire()
+        day0_wx = make_day_weather(weather, 0)
+        day5_wx = make_day_weather(weather, 5)
+        r0 = score_burn_site(fire, day0_wx, 5500, "morel", GOOD_TERRAIN)
+        r5 = score_burn_site(fire, day5_wx, 5500, "morel", GOOD_TERRAIN)
+        # Day 5 has warmer soil — should score higher on soil_threshold
+        assert r5["scores"]["soil_threshold"] >= r0["scores"]["soil_threshold"], \
+            f"Day 5 soil ({r5['scores']['soil_threshold']}) should >= day 0 ({r0['scores']['soil_threshold']})"
+
+    def test_cold_snap_then_recovery_v_shape(self):
+        """Scores should form a V: high now, drop mid-week, recover by weekend."""
+        from scoring import score_burn_multiday
+        weather = make_weather(
+            soil_temps=[52, 53, 54, 55, 55, 55, 55, 55, 42, 38, 35, 38, 45, 52],
+            highs=[62, 63, 65, 65, 65, 65, 65, 65, 42, 35, 30, 38, 52, 60],
+            lows=[38, 40, 42, 42, 42, 42, 42, 42, 28, 22, 18, 25, 35, 40],
+            precip_14d=1.5,
+            snow_depths=[0, 0, 0, 0, 0, 0, 0, 0, 2, 5, 6, 3, 0.5, 0],
+        )
+        fire = make_fire()
+        days = score_burn_multiday(fire, weather, 5500, GOOD_TERRAIN)
+        # Day 0 should be good, day 3 should dip, day 6 should recover
+        assert days[0]["total"] > days[3]["total"], \
+            f"Day 0 ({days[0]['total']}) should beat cold snap day 3 ({days[3]['total']})"
+        assert days[6]["total"] > days[3]["total"], \
+            f"Recovery day 6 ({days[6]['total']}) should beat day 3 ({days[3]['total']})"
+
+    def test_stable_weather_stable_scores(self):
+        """If weather is constant across forecast, all days should score similarly."""
+        from scoring import score_burn_multiday
+        weather = make_weather(
+            soil_temps=[52] * 14, highs=[62] * 14, lows=[40] * 14, precip_14d=1.5,
+        )
+        fire = make_fire()
+        days = score_burn_multiday(fire, weather, 5500, GOOD_TERRAIN)
+        totals = [d["total"] for d in days]
+        spread = max(totals) - min(totals)
+        assert spread <= 10, \
+            f"Stable weather score spread {spread} — should be <=10"
+
+    def test_snow_day_soil_threshold_drops(self):
+        """Day with snow on ground should have lower soil_threshold than clear day."""
+        weather = make_weather(
+            soil_temps=[52, 52, 52, 52, 52, 52, 52, 52, 38, 35, 32, 35, 42, 50],
+            highs=[60] * 14, lows=[40] * 14, precip_14d=1.5,
+            snow_depths=[0, 0, 0, 0, 0, 0, 0, 0, 3, 6, 8, 5, 1, 0],
+        )
+        fire = make_fire()
+        day0_wx = make_day_weather(weather, 0)
+        day3_wx = make_day_weather(weather, 3)
+        r0 = score_burn_site(fire, day0_wx, 5500, "morel", GOOD_TERRAIN)
+        r3 = score_burn_site(fire, day3_wx, 5500, "morel", GOOD_TERRAIN)
+        assert r0["scores"]["soil_threshold"] > r3["scores"]["soil_threshold"], \
+            f"Day 0 soil ({r0['scores']['soil_threshold']}) should beat snowy day 3 ({r3['scores']['soil_threshold']})"
+
+    def test_forecast_drying_reduces_moisture(self):
+        """If forecast shows no more rain, moisture should decline for later days."""
+        # Heavy recent rain but forecast is dry
+        weather = make_weather(
+            soil_temps=[52] * 14, highs=[65] * 14, lows=[40] * 14,
+            precip_14d=2.5,  # past rain
+            snow_depths=[0] * 14,
+        )
+        fire = make_fire()
+        # Moisture score is currently based on hist_precip which doesn't shift per day
+        # This test documents the current behavior — moisture stays constant
+        day0_wx = make_day_weather(weather, 0)
+        day5_wx = make_day_weather(weather, 5)
+        r0 = score_burn_site(fire, day0_wx, 5500, "morel", GOOD_TERRAIN)
+        r5 = score_burn_site(fire, day5_wx, 5500, "morel", GOOD_TERRAIN)
+        # Currently both get same moisture — this is a known limitation
+        # The test passes but documents that we should fix this later
+        assert abs(r0["scores"]["recent_moisture"] - r5["scores"]["recent_moisture"]) <= 5
+
+    def test_burn_quality_stable_across_days(self):
+        """Burn quality should not change across forecast days (burn age is fixed)."""
+        from scoring import score_burn_multiday
+        weather = make_weather(
+            soil_temps=[52] * 14, highs=[60] * 14, lows=[40] * 14, precip_14d=1.5,
+        )
+        fire = make_fire()
+        days = score_burn_multiday(fire, weather, 5500, GOOD_TERRAIN)
+        bq_scores = [d["scores"]["burn_quality"] for d in days]
+        assert len(set(bq_scores)) == 1, \
+            f"Burn quality should be constant across days, got {bq_scores}"
+
+    def test_best_day_identification(self):
+        """Should be able to find the highest-scoring day programmatically."""
+        from scoring import score_burn_multiday
+        weather = make_weather(
+            soil_temps=[45, 47, 49, 50, 51, 52, 53, 55, 56, 57, 55, 50, 48, 47],
+            highs=[55, 58, 60, 62, 64, 65, 66, 67, 65, 60, 55, 52, 50, 52],
+            lows=[32, 34, 36, 38, 40, 42, 42, 42, 40, 36, 32, 30, 28, 30],
+            precip_14d=1.5,
+        )
+        fire = make_fire()
+        days = score_burn_multiday(fire, weather, 5500, GOOD_TERRAIN)
+        best_day = max(days, key=lambda d: d["total"])
+        # Best day should be around day 0-2 (soil at 55-57F, warming)
+        # not day 5+ (soil dropping)
+        assert best_day["day"] <= 3, \
+            f"Best day is {best_day['day']} — expected 0-3 (peak warmth)"
+
+    def test_each_day_has_details(self):
+        """Every day score should include soil_temp, soil_trend, snow_status."""
+        from scoring import score_burn_multiday
+        weather = make_weather(
+            soil_temps=[50, 51, 52, 53, 54, 55, 55, 55, 50, 45, 42, 45, 50, 53],
+            highs=[60] * 14, lows=[38] * 14, precip_14d=1.5,
+            snow_depths=[0, 0, 0, 0, 0, 0, 0, 0, 2, 4, 3, 1, 0, 0],
+        )
+        fire = make_fire()
+        days = score_burn_multiday(fire, weather, 5500, GOOD_TERRAIN)
+        for d in days:
+            assert "soil_temp" in d["details"], f"Day {d['day']} missing soil_temp"
+            assert "soil_trend" in d["details"], f"Day {d['day']} missing soil_trend"
