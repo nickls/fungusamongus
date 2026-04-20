@@ -75,13 +75,21 @@ def export_json(results, all_fires, run_date):
         days = []
         for ds in r.get("day_scores", []):
             day_date = (today + timedelta(days=ds["day"])).strftime("%Y-%m-%d")
+            # Prefix detail keys to avoid collision with score keys
+            # (e.g. "soil_gdd" exists in both scores and details)
+            detail_items = {}
+            for k, v in ds.get("details", {}).items():
+                if isinstance(v, (str, int, float)):
+                    if k in ds["scores"]:
+                        detail_items["d_" + k] = v  # prefix to avoid collision
+                    else:
+                        detail_items[k] = v
             days.append({
                 "day": ds["day"],
                 "date": day_date,
                 "total": ds["total"],
                 **ds["scores"],
-                # Include key weather details for popup
-                **{k: v for k, v in ds.get("details", {}).items() if isinstance(v, (str, int, float))},
+                **detail_items,
             })
         # Raw weather time series for detail page visualization
         wx = r.get("weather", {})
