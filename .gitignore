@@ -9,7 +9,7 @@ cache/
 # Raw scraped HTML (15MB+)
 pfirs_raw.html
 
-# Generated outputs (root level — pages/ is tracked for GH Pages)
+# Generated outputs (root level — docs/ is tracked for GH Pages)
 /*.html
 /*.png
 /*.csv
