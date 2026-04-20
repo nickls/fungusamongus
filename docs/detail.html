@@ -215,54 +215,60 @@ async function init() {
     return out;
   }
 
-  // ── Combined Temperature Chart (soil + air on same timeline) ──
+  // ── Temperature Line Chart (SVG) — soil + air on same timeline ──
   {
     const soilHist = h.hist_soil_temp || [];
     const soilFc = h.forecast_soil_temp || [];
     const airHist = h.hist_temps_max || [];
     const airFc = h.forecast_temps_max || [];
-    const allTemps = [...soilHist, ...soilFc, ...airHist, ...airFc].filter(v => v != null);
+    const soilAll = [...soilHist, ...soilFc];
+    const airAll = [...airHist, ...airFc];
+    const allTemps = [...soilAll, ...airAll].filter(v => v != null);
 
     if (allTemps.length > 0) {
-      const maxT = Math.max(...allTemps, 70);
-      const totalBars = HIST_DAYS + FC_DAYS;
-      const todayPct = (TODAY_IDX / totalBars) * 100;
+      const W = 860, H = 130, PAD = 30;
+      const maxT = Math.max(...allTemps) + 5;
+      const minT = Math.min(...allTemps) - 5;
+      const totalPts = HIST_DAYS + FC_DAYS;
+      const xScale = (W - PAD) / (totalPts - 1);
+      const yScale = (H - 10) / (maxT - minT);
+      const y = v => H - 5 - (v - minT) * yScale;
+      const x = i => PAD + i * xScale;
+      const todayX = x(TODAY_IDX);
 
-      html += `<div class="chart-card" style="grid-column: 1 / -1;">`;
-      html += `<h3>Temperature — <span style="color:#c0392b">Soil</span> + <span style="color:#e67e22">Air High</span> (F)</h3>`;
-      html += `<div style="position:relative;height:120px;">`;
-      // Today line
-      html += `<div style="position:absolute;left:${todayPct}%;top:0;bottom:-18px;width:1px;background:#e94560;z-index:2;"></div>`;
-      // Bars container
-      html += `<div style="display:flex;gap:1px;align-items:flex-end;height:100%;position:relative;">`;
-
-      for (let i = 0; i < totalBars; i++) {
-        const isFc = i >= HIST_DAYS;
-        const soilV = i < soilHist.length ? soilHist[i] : (isFc ? (soilFc[i - HIST_DAYS] ?? null) : null);
-        const airV = i < airHist.length ? airHist[i] : (isFc ? (airFc[i - HIST_DAYS] ?? null) : null);
-        const opacity = isFc ? 1 : 0.5;
-
-        html += `<div style="flex:1;position:relative;height:100%;">`;
-        // Air temp bar (behind, wider)
-        if (airV != null) {
-          const pct = Math.max((airV / maxT) * 100, 3);
-          html += `<div style="position:absolute;bottom:0;left:0;right:0;height:${pct}%;background:#e67e22;opacity:${opacity * 0.4};border-radius:1px 1px 0 0;" title="Air: ${airV}F"></div>`;
+      function makePath(vals, len) {
+        let pts = [];
+        for (let i = 0; i < len; i++) {
+          const v = i < vals.length ? vals[i] : null;
+          if (v != null) pts.push(`${i === 0 || pts.length === 0 ? 'M' : 'L'}${x(i).toFixed(1)},${y(v).toFixed(1)}`);
         }
-        // Soil temp bar (front, narrower)
-        if (soilV != null) {
-          const pct = Math.max((soilV / maxT) * 100, 3);
-          html += `<div style="position:absolute;bottom:0;left:15%;right:15%;height:${pct}%;background:#c0392b;opacity:${opacity};border-radius:1px 1px 0 0;" title="Soil: ${soilV}F"></div>`;
-        }
-        html += `</div>`;
+        return pts.join(" ");
       }
-      html += `</div></div>`;
-      html += `<div style="display:flex;justify-content:space-between;font-size:9px;color:#555;margin-top:4px;">`;
-      html += `<span>-30 days</span><span style="color:#e94560;">today</span><span>+7 days</span>`;
-      html += `</div></div>`;
+
+      html += `<div class="chart-card" style="grid-column:1/-1;">`;
+      html += `<h3>Temperature — <span style="color:#c0392b">Soil</span> &amp; <span style="color:#e67e22">Air High</span> (F)</h3>`;
+      html += `<svg width="100%" viewBox="0 0 ${W} ${H}" style="overflow:visible;">`;
+      // Grid lines
+      for (let t = Math.ceil(minT/10)*10; t <= maxT; t += 10) {
+        html += `<line x1="${PAD}" x2="${W}" y1="${y(t)}" y2="${y(t)}" stroke="#0f3460" stroke-width="0.5"/>`;
+        html += `<text x="${PAD-4}" y="${y(t)+3}" fill="#555" font-size="9" text-anchor="end">${t}</text>`;
+      }
+      // Today line
+      html += `<line x1="${todayX}" x2="${todayX}" y1="0" y2="${H}" stroke="#e94560" stroke-width="1.5" stroke-dasharray="4,3"/>`;
+      html += `<text x="${todayX}" y="${H+12}" fill="#e94560" font-size="9" text-anchor="middle">today</text>`;
+      // Air line (behind, thinner)
+      html += `<path d="${makePath(airAll, totalPts)}" fill="none" stroke="#e67e22" stroke-width="1.5" opacity="0.7"/>`;
+      // Soil line (front, thicker)
+      html += `<path d="${makePath(soilAll, totalPts)}" fill="none" stroke="#c0392b" stroke-width="2.5"/>`;
+      // Forecast region shade
+      html += `<rect x="${todayX}" y="0" width="${W-todayX}" height="${H}" fill="#e94560" opacity="0.03"/>`;
+      html += `</svg>`;
+      html += `<div style="display:flex;justify-content:space-between;font-size:9px;color:#555;margin-top:2px;">`;
+      html += `<span>-30 days</span><span>+7 days</span></div></div>`;
     }
   }
 
-  // ── Combined Moisture Chart (precipitation bars + snow depth bars) ──
+  // ── Moisture Chart — rain bars (light blue) + snow depth bars (white) ──
   {
     const precip = h.hist_precip || [];
     const snowAll = h.forecast_snow_depth || [];
@@ -273,16 +279,17 @@ async function init() {
     const totalBars = HIST_DAYS + FC_DAYS;
     const todayPct = (TODAY_IDX / totalBars) * 100;
 
-    const allP = precip.filter(v => v != null && v > 0);
-    const allS = snowAll.filter(v => v != null && v > 0);
+    const hasP = precip.some(v => v != null && v > 0);
+    const hasS = snowAll.some(v => v != null && v > 0);
 
-    if (allP.length > 0 || allS.length > 0) {
+    if (hasP || hasS) {
       const maxP = Math.max(...precip.filter(v => v != null), 0.5);
       const maxS = Math.max(...snowAll.filter(v => v != null), 1);
+      const maxY = Math.max(maxP, maxS * 0.3);
 
-      html += `<div class="chart-card" style="grid-column: 1 / -1;">`;
-      html += `<h3>Moisture — <span style="color:#2980b9">Rain</span> + <span style="color:#87CEEB">Snow Depth</span></h3>`;
-      html += `<div style="position:relative;height:80px;">`;
+      html += `<div class="chart-card" style="grid-column:1/-1;">`;
+      html += `<h3>Moisture — <span style="color:#5bc0de">Rain</span> &amp; <span style="color:rgba(255,255,255,0.8)">Snow Depth</span></h3>`;
+      html += `<div style="position:relative;height:70px;">`;
       html += `<div style="position:absolute;left:${todayPct}%;top:0;bottom:-18px;width:1px;background:#e94560;z-index:2;"></div>`;
       html += `<div style="display:flex;gap:1px;align-items:flex-end;height:100%;">`;
 
@@ -291,16 +298,15 @@ async function init() {
         const sv = i < snowFull.length ? snowFull[i] : null;
 
         html += `<div style="flex:1;position:relative;height:100%;">`;
-        // Snow depth (behind, lighter)
+        // Snow depth — white/very light, behind
         if (sv != null && sv > 0) {
-          const pct = Math.max((sv / maxS) * 80, 3);
-          html += `<div style="position:absolute;bottom:0;left:0;right:0;height:${pct}%;background:#87CEEB;opacity:0.4;border-radius:1px 1px 0 0;" title="Snow: ${sv.toFixed(1)}in"></div>`;
+          const pct = Math.max((sv / maxS) * 70, 3);
+          html += `<div style="position:absolute;bottom:0;left:0;right:0;height:${pct}%;background:rgba(255,255,255,0.25);border:1px solid rgba(255,255,255,0.4);border-bottom:none;border-radius:1px 1px 0 0;" title="Snow: ${sv.toFixed(1)}in"></div>`;
         }
-        // Precip (front)
+        // Rain — light blue, front
         if (pv != null && pv > 0) {
-          const pct = Math.max((pv / maxP) * 100, 5);
-          const big = pv > 0.4;
-          html += `<div style="position:absolute;bottom:0;left:10%;right:10%;height:${pct}%;background:${big ? '#3498db' : '#1a4a6e'};border-radius:1px 1px 0 0;" title="Rain: ${pv.toFixed(2)}in${big ? ' (>0.4in)' : ''}"></div>`;
+          const pct = Math.max((pv / maxY) * 100, 5);
+          html += `<div style="position:absolute;bottom:0;left:15%;right:15%;height:${pct}%;background:#5bc0de;border-radius:1px 1px 0 0;" title="Rain: ${pv.toFixed(2)}in"></div>`;
         }
         html += `</div>`;
       }
