@@ -231,11 +231,8 @@ async function init() {
     else labels.push("");
   }
 
-  // Temperature chart canvas
-  html += `<div class="chart-card" style="grid-column:1/-1;"><canvas id="tempChart"></canvas></div>`;
-
-  // Moisture chart canvas
-  html += `<div class="chart-card" style="grid-column:1/-1;"><canvas id="moistChart"></canvas></div>`;
+  // Combined weather chart canvas
+  html += `<div class="chart-card" style="grid-column:1/-1;"><canvas id="weatherChart"></canvas></div>`;
 
   // We'll initialize charts after innerHTML is set (below)
 
@@ -307,39 +304,7 @@ async function init() {
 
   document.getElementById("content").innerHTML = html;
 
-  // ── Initialize Chart.js charts ──
-  const chartDefaults = {
-    responsive: true,
-    plugins: {
-      legend: { labels: { color: "#aaa", font: { size: 11 } } },
-      tooltip: { mode: "index", intersect: false },
-    },
-    scales: {
-      x: { ticks: { color: "#666", font: { size: 9 }, maxRotation: 0 }, grid: { color: "#0f3460" } },
-      y: { ticks: { color: "#888", font: { size: 10 } }, grid: { color: "#0f3460" } },
-    },
-  };
-
-  // Today vertical line plugin
-  const todayLinePlugin = {
-    id: "todayLine",
-    afterDraw(chart) {
-      const xScale = chart.scales.x;
-      const ctx = chart.ctx;
-      const todayX = xScale.getPixelForValue(TODAY_IDX);
-      ctx.save();
-      ctx.strokeStyle = "#e94560";
-      ctx.lineWidth = 1.5;
-      ctx.setLineDash([5, 4]);
-      ctx.beginPath();
-      ctx.moveTo(todayX, chart.chartArea.top);
-      ctx.lineTo(todayX, chart.chartArea.bottom);
-      ctx.stroke();
-      ctx.restore();
-    }
-  };
-
-  // Temperature chart
+  // ── Initialize combined Chart.js chart ──
   const soilHist = h.hist_soil_temp || [];
   const soilFc = h.forecast_soil_temp || [];
   const airHist = h.hist_temps_max || [];
@@ -347,7 +312,13 @@ async function init() {
   const soilAll = [...soilHist, ...new Array(Math.max(0, HIST_DAYS - soilHist.length)).fill(null), ...soilFc];
   const airAll = [...airHist, ...new Array(Math.max(0, HIST_DAYS - airHist.length)).fill(null), ...airFc];
 
-  // Soil trend line data
+  const precip = h.hist_precip || [];
+  const snowAll2 = h.forecast_snow_depth || [];
+  const precipFull = [...precip, ...new Array(FC_DAYS).fill(null)];
+  const snowPad = new Array(HIST_DAYS - 7).fill(null);
+  const snowFull = [...snowPad, ...snowAll2, ...new Array(Math.max(0, totalDays - snowPad.length - snowAll2.length)).fill(null)];
+
+  // Soil trend line
   let trendData = null;
   const soilValid = soilAll.map((v, i) => v != null ? [i, v] : null).filter(Boolean);
   if (soilValid.length >= 6) {
@@ -358,56 +329,64 @@ async function init() {
     trendData = soilAll.map((_,i) => +(intercept + slope*i).toFixed(1));
   }
 
-  const tempCtx = document.getElementById("tempChart");
-  if (tempCtx && (soilAll.some(v=>v!=null) || airAll.some(v=>v!=null))) {
+  const wxCtx = document.getElementById("weatherChart");
+  if (wxCtx) {
     const datasets = [];
+
+    // Lines on left y-axis (temperature)
     if (soilAll.some(v=>v!=null)) datasets.push({
-      label: "Soil Temp (F)", data: soilAll, borderColor: "#8B5E3C", backgroundColor: "rgba(139,94,60,0.1)",
-      borderWidth: 2.5, pointRadius: 0, tension: 0.3, fill: false,
+      type: "line", label: "Soil Temp (F)", data: soilAll,
+      borderColor: "#8B5E3C", borderWidth: 2.5, pointRadius: 0, tension: 0.3,
+      fill: false, yAxisID: "yTemp",
     });
     if (airAll.some(v=>v!=null)) datasets.push({
-      label: "Air High (F)", data: airAll, borderColor: "#9b59b6", backgroundColor: "rgba(155,89,182,0.05)",
-      borderWidth: 1.5, pointRadius: 0, tension: 0.3, fill: false, borderDash: [4, 2],
+      type: "line", label: "Air High (F)", data: airAll,
+      borderColor: "#9b59b6", borderWidth: 1.5, pointRadius: 0, tension: 0.3,
+      fill: false, borderDash: [4, 2], yAxisID: "yTemp",
     });
     if (trendData) datasets.push({
-      label: "Soil Trend", data: trendData, borderColor: "#e94560", borderWidth: 1.5,
-      pointRadius: 0, borderDash: [8, 4], fill: false,
+      type: "line", label: "Soil Trend", data: trendData,
+      borderColor: "#e94560", borderWidth: 1.5, pointRadius: 0,
+      borderDash: [8, 4], fill: false, yAxisID: "yTemp",
     });
-    new Chart(tempCtx, {
-      type: "line",
+
+    // Bars on right y-axis (moisture)
+    if (precip.some(v=>v>0)) datasets.push({
+      type: "bar", label: "Rain (in)", data: precipFull.map(v => v > 0 ? v : null),
+      backgroundColor: "#5bc0de", borderRadius: 2, barPercentage: 0.7,
+      yAxisID: "yMoist", order: 10,
+    });
+    if (snowAll2.some(v=>v>0)) datasets.push({
+      type: "bar", label: "Snow Depth (in)", data: snowFull.map(v => v > 0 ? v : null),
+      backgroundColor: "rgba(255,255,255,0.3)", borderColor: "rgba(255,255,255,0.5)",
+      borderWidth: 1, borderRadius: 2, barPercentage: 0.9,
+      yAxisID: "yMoist", order: 11,
+    });
+
+    new Chart(wxCtx, {
       data: { labels, datasets },
-      options: { ...chartDefaults, plugins: { ...chartDefaults.plugins, title: { display: true, text: "Temperature (30-day history + 7-day forecast)", color: "#aaa" } } },
-      plugins: [todayLinePlugin],
-    });
-  }
-
-  // Moisture chart
-  const precip = h.hist_precip || [];
-  const snowAll2 = h.forecast_snow_depth || [];
-  const precipFull = [...precip, ...new Array(FC_DAYS).fill(null)];
-  const snowPad = new Array(HIST_DAYS - 7).fill(null);
-  const snowFull = [...snowPad, ...snowAll2, ...new Array(Math.max(0, totalDays - snowPad.length - snowAll2.length)).fill(null)];
-
-  const moistCtx = document.getElementById("moistChart");
-  if (moistCtx && (precip.some(v=>v>0) || snowAll2.some(v=>v>0))) {
-    new Chart(moistCtx, {
-      type: "bar",
-      data: {
-        labels,
-        datasets: [
-          {
-            label: "Rain (in)", data: precipFull.map(v => v > 0 ? v : null),
-            backgroundColor: "#5bc0de", borderRadius: 2, barPercentage: 0.8, order: 1,
+      options: {
+        responsive: true,
+        interaction: { mode: "index", intersect: false },
+        plugins: {
+          legend: { labels: { color: "#aaa", font: { size: 11 } } },
+          title: { display: true, text: "Weather — 30-day history + 7-day forecast", color: "#aaa", font: { size: 13 } },
+        },
+        scales: {
+          x: { ticks: { color: "#666", font: { size: 9 }, maxRotation: 0 }, grid: { color: "#0f3460" } },
+          yTemp: {
+            type: "linear", position: "left",
+            title: { display: true, text: "Temperature (F)", color: "#8B5E3C" },
+            ticks: { color: "#888" }, grid: { color: "#0f3460" },
           },
-          {
-            label: "Snow Depth (in)", data: snowFull.map(v => v > 0 ? v : null),
-            backgroundColor: "rgba(255,255,255,0.3)", borderColor: "rgba(255,255,255,0.5)",
-            borderWidth: 1, borderRadius: 2, barPercentage: 0.9, order: 2,
+          yMoist: {
+            type: "linear", position: "right",
+            title: { display: true, text: "Precip / Snow (in)", color: "#5bc0de" },
+            ticks: { color: "#888" }, grid: { drawOnChartArea: false },
+            min: 0,
           },
-        ],
+        },
       },
-      options: { ...chartDefaults, plugins: { ...chartDefaults.plugins, title: { display: true, text: "Moisture (Rain + Snow Depth)", color: "#aaa" } } },
-      plugins: [todayLinePlugin],
     });
   }
 }
