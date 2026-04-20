@@ -171,73 +171,88 @@ async function init() {
 
   html += `</div>`;
 
-  // Historical data charts (30-day history + 14-day forecast)
+  // ── Unified timeline charts (30-day history + 14-day forecast) ──
+  // All charts share the same 44-bar x-axis. "Today" = index 30.
   const h = burn.history || {};
-  if (h.hist_soil_temp || h.forecast_soil_temp) {
-    const histSoil = h.hist_soil_temp || [];
-    const fcSoil = h.forecast_soil_temp || [];
-    const allSoil = [...histSoil, ...fcSoil];
-    if (allSoil.length > 0) {
-      html += `<div class="chart-card" style="grid-column: 1 / -1;">`;
-      html += `<h3>Soil Temperature — 30-Day History + 7-Day Forecast</h3>`;
-      html += `<div style="display:flex;gap:1px;align-items:flex-end;height:100px;">`;
-      const maxT = Math.max(...allSoil.filter(v => v != null), 70);
-      for (let i = 0; i < allSoil.length; i++) {
-        const v = allSoil[i];
-        if (v == null) { html += `<div style="flex:1"></div>`; continue; }
-        const pct = Math.max((v / maxT) * 100, 3);
-        const isForecast = i >= histSoil.length;
-        const isToday = i === histSoil.length + 7;
-        const color = isForecast ? "#c0392b" : "#8b3a3a";
-        const border = isToday ? "outline:2px solid #e94560;" : "";
-        html += `<div style="flex:1;height:${pct}%;background:${color};opacity:${isForecast ? 1 : 0.6};border-radius:1px 1px 0 0;${border}" title="Day ${i - histSoil.length}: ${v}F"></div>`;
-      }
-      html += `</div>`;
-      html += `<div style="display:flex;justify-content:space-between;font-size:9px;color:#666;margin-top:2px;">`;
-      html += `<span>30 days ago</span><span style="color:#e94560;">today</span><span>+7 days</span>`;
-      html += `</div></div>`;
+  const HIST_DAYS = 30;
+  const FC_DAYS = 14;
+  const TODAY_IDX = HIST_DAYS;  // index 30 in a 44-bar chart
+
+  function timelineChart(title, histVals, fcVals, opts = {}) {
+    const { color = "#c0392b", histColor = null, height = 100, unit = "",
+            highlightThreshold = null, highlightColor = null, showZero = false } = opts;
+    const hc = histColor || color;
+    const all = [...(histVals || []), ...(fcVals || [])];
+    if (!all.length || (!showZero && all.every(v => v == null || v === 0))) return "";
+    const maxV = Math.max(...all.filter(v => v != null), 1);
+
+    let out = `<div class="chart-card" style="grid-column: 1 / -1;">`;
+    out += `<h3>${title}</h3>`;
+    out += `<div style="display:flex;gap:1px;align-items:flex-end;height:${height}px;position:relative;">`;
+
+    // Today line
+    const todayPct = (TODAY_IDX / all.length) * 100;
+    out += `<div style="position:absolute;left:${todayPct}%;top:0;bottom:-18px;width:1px;background:#e94560;z-index:1;"></div>`;
+
+    for (let i = 0; i < all.length; i++) {
+      const v = all[i];
+      if (v == null) { out += `<div style="flex:1"></div>`; continue; }
+      const pct = Math.max((Math.abs(v) / maxV) * 100, v === 0 ? 0 : 3);
+      const isFc = i >= HIST_DAYS;
+      const isToday = i === TODAY_IDX;
+      let c = isFc ? color : hc;
+      if (highlightThreshold && v > highlightThreshold) c = highlightColor || color;
+      const opacity = isFc ? 1 : 0.55;
+      const border = isToday ? "outline:2px solid #e94560;" : "";
+      const dayNum = i - HIST_DAYS;
+      const label = dayNum === 0 ? "today" : (dayNum > 0 ? `+${dayNum}` : `${dayNum}`);
+      out += `<div style="flex:1;height:${pct}%;background:${c};opacity:${opacity};border-radius:1px 1px 0 0;${border}" title="${label}: ${typeof v === 'number' ? v.toFixed(1) : v}${unit}"></div>`;
     }
+    out += `</div>`;
+    out += `<div style="display:flex;justify-content:space-between;font-size:9px;color:#555;margin-top:4px;">`;
+    out += `<span>-30 days</span><span style="color:#e94560;">today</span><span>+7 days</span>`;
+    out += `</div></div>`;
+    return out;
   }
 
-  // Historical precip
-  if (h.hist_precip) {
-    const precip = h.hist_precip;
-    html += `<div class="chart-card" style="grid-column: 1 / -1;">`;
-    html += `<h3>Precipitation — 30-Day History (in/day)</h3>`;
-    html += `<div style="display:flex;gap:1px;align-items:flex-end;height:60px;">`;
-    const maxP = Math.max(...precip.filter(v => v != null), 0.5);
-    for (let i = 0; i < precip.length; i++) {
-      const v = precip[i];
-      if (v == null || v === 0) { html += `<div style="flex:1"></div>`; continue; }
-      const pct = Math.max((v / maxP) * 100, 5);
-      const big = v > 0.4;  // >10mm rain event
-      html += `<div style="flex:1;height:${pct}%;background:${big ? '#2980b9' : '#1a4a6e'};border-radius:1px 1px 0 0;" title="Day ${i-30}: ${v.toFixed(2)}in${big ? ' (>0.4in event)' : ''}"></div>`;
-    }
-    html += `</div>`;
-    html += `<div style="display:flex;justify-content:space-between;font-size:9px;color:#666;margin-top:2px;">`;
-    html += `<span>30 days ago</span><span>today</span>`;
-    html += `</div></div>`;
+  // Soil Temperature (30 hist + 14 forecast)
+  html += timelineChart(
+    "Soil Temperature (F)",
+    h.hist_soil_temp, h.forecast_soil_temp,
+    { color: "#c0392b", histColor: "#7a2a2a", height: 110, unit: "F" }
+  );
+
+  // Precipitation (30 hist + pad 14 forecast as empty)
+  // We don't have forecast precip yet — pad with nulls
+  const fcPrecipPad = new Array(FC_DAYS).fill(null);
+  html += timelineChart(
+    "Precipitation (in/day)",
+    h.hist_precip, fcPrecipPad,
+    { color: "#2980b9", histColor: "#1a4a6e", height: 70, unit: "in",
+      highlightThreshold: 0.4, highlightColor: "#3498db" }
+  );
+
+  // Snow Depth (7 hist from forecast past_days + 7 forecast)
+  // forecast_snow_depth is 14 values: 7 past + 7 future
+  // Pad with nulls to align with 44-bar timeline: 23 nulls + 14 snow + 7 nulls
+  if (h.forecast_snow_depth && h.forecast_snow_depth.some(v => v > 0)) {
+    const snowPadBefore = new Array(HIST_DAYS - 7).fill(null);
+    const snowHist = h.forecast_snow_depth.slice(0, 7);
+    const snowFc = h.forecast_snow_depth.slice(7);
+    html += timelineChart(
+      "Snow Depth (inches)",
+      [...snowPadBefore, ...snowHist], snowFc,
+      { color: "#87CEEB", histColor: "#5ba3c4", height: 60, unit: "in" }
+    );
   }
 
-  // Historical snow depth
-  if (h.forecast_snow_depth) {
-    const snow = h.forecast_snow_depth;
-    if (snow.some(v => v > 0)) {
-      html += `<div class="chart-card" style="grid-column: 1 / -1;">`;
-      html += `<h3>Snow Depth — 14-Day Window (inches)</h3>`;
-      html += `<div style="display:flex;gap:1px;align-items:flex-end;height:60px;">`;
-      const maxS = Math.max(...snow.filter(v => v != null), 1);
-      for (let i = 0; i < snow.length; i++) {
-        const v = snow[i];
-        if (v == null || v === 0) { html += `<div style="flex:1"></div>`; continue; }
-        const pct = Math.max((v / maxS) * 100, 5);
-        html += `<div style="flex:1;height:${pct}%;background:#87CEEB;border-radius:1px 1px 0 0;" title="Day ${i-7}: ${v.toFixed(1)}in"></div>`;
-      }
-      html += `</div>`;
-      html += `<div style="display:flex;justify-content:space-between;font-size:9px;color:#666;margin-top:2px;">`;
-      html += `<span>7 days ago</span><span>today</span><span>+7 days</span>`;
-      html += `</div></div>`;
-    }
+  // Air Temp High/Low (30 hist + 14 forecast)
+  if (h.hist_temps_max || h.forecast_temps_max) {
+    html += timelineChart(
+      "Air Temp High (F)",
+      h.hist_temps_max, h.forecast_temps_max,
+      { color: "#e67e22", histColor: "#8b5a1a", height: 80, unit: "F" }
+    );
   }
 
   // Soil deltas chart
