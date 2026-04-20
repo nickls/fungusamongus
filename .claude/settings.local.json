@@ -13,7 +13,9 @@
       "Bash(.venv/bin/python morel_finder.py)",
       "Bash(.venv/bin/python -u morel_finder.py)",
       "WebFetch(domain:lfps.usgs.gov)",
-      "WebFetch(domain:www.landfire.gov)"
+      "WebFetch(domain:www.landfire.gov)",
+      "WebFetch(domain:files.pythonhosted.org)",
+      "Bash(.venv/bin/python:*)"
     ]
   },
   "sandbox": {

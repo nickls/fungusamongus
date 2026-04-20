@@ -18,6 +18,7 @@ let data = null;
 let selectedDay = 0;
 let filters = {};
 let currentZoom = "local";
+let layerMode = "both"; // "both", "markers", "heat"
 
 // ── Init ──
 
@@ -36,12 +37,18 @@ async function init() {
   document.getElementById("run-date").textContent = data.run_date;
   document.getElementById("algo-version").textContent = data.algo_version;
 
-  // Init map
+  // Init map with layer control for base maps
   map = L.map("map", { zoomControl: true });
-  L.tileLayer("https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png", {
+  const carto = L.tileLayer("https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png", {
     attribution: '&copy; <a href="https://carto.com/">CARTO</a>',
     maxZoom: 18,
-  }).addTo(map);
+  });
+  const esriTopo = L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/World_Topo_Map/MapServer/tile/{z}/{y}/{x}", {
+    attribution: "Esri",
+    maxZoom: 18,
+  });
+  carto.addTo(map);
+  L.control.layers({"CARTO": carto, "Esri Topo": esriTopo}, null, {position: "topright"}).addTo(map);
 
   markersLayer = L.layerGroup().addTo(map);
 
@@ -164,6 +171,14 @@ function setZoom(mode) {
   map.fitBounds(bounds);
 }
 
+function setLayers(mode) {
+  layerMode = mode;
+  document.querySelectorAll(".layer-btn").forEach(btn => {
+    btn.classList.toggle("active", btn.dataset.layer === mode);
+  });
+  render();
+}
+
 // ── Render ──
 
 function render() {
@@ -215,45 +230,47 @@ function render() {
       }
     }
 
-    // Marker
-    const color = day.total >= 80 ? "purple" : day.total >= 70 ? "green" : "orange";
+    // Marker (only if layerMode includes markers)
+    if (layerMode === "both" || layerMode === "markers") {
+      const color = day.total >= 80 ? "purple" : day.total >= 70 ? "green" : "orange";
 
-    if (day.total >= 70) {
-      // Diamond via DivIcon
-      const size = 22 + Math.floor(day.total / 10);
-      const icon = L.divIcon({
-        className: "",
-        html: `<div style="
-          width:${size}px;height:${size}px;
-          background:${color};
-          border:2px solid white;
-          border-radius:3px;
-          transform:rotate(45deg);
-          box-shadow:0 0 4px rgba(0,0,0,0.5);
-          display:flex;align-items:center;justify-content:center;
-        "><span style="transform:rotate(-45deg);color:white;
-          font-weight:bold;font-size:10px;">${day.total}</span></div>`,
-        iconSize: [size, size],
-        iconAnchor: [size / 2, size / 2],
-      });
-      L.marker([burn.lat, burn.lon], { icon })
-        .bindPopup(() => makePopup(burn, day), {maxWidth: 360})
-        .addTo(markersLayer);
-    } else {
-      L.circleMarker([burn.lat, burn.lon], {
-        radius: 4,
-        color: color,
-        fillColor: color,
-        fillOpacity: 0.6,
-        weight: 1,
-      })
-        .bindPopup(() => makePopup(burn, day), {maxWidth: 360})
-        .addTo(markersLayer);
+      if (day.total >= 70) {
+        const size = 22 + Math.floor(day.total / 10);
+        const icon = L.divIcon({
+          className: "",
+          html: `<div style="
+            width:${size}px;height:${size}px;
+            background:${color};
+            border:2px solid white;
+            border-radius:3px;
+            transform:rotate(45deg);
+            box-shadow:0 0 4px rgba(0,0,0,0.5);
+            display:flex;align-items:center;justify-content:center;
+          "><span style="transform:rotate(-45deg);color:white;
+            font-weight:bold;font-size:10px;">${day.total}</span></div>`,
+          iconSize: [size, size],
+          iconAnchor: [size / 2, size / 2],
+        });
+        L.marker([burn.lat, burn.lon], { icon })
+          .bindPopup(() => makePopup(burn, day), {maxWidth: 360})
+          .addTo(markersLayer);
+      } else {
+        L.circleMarker([burn.lat, burn.lon], {
+          radius: 4,
+          color: color,
+          fillColor: color,
+          fillOpacity: 0.6,
+          weight: 1,
+        })
+          .bindPopup(() => makePopup(burn, day), {maxWidth: 360})
+          .addTo(markersLayer);
+      }
     }
   }
 
-  // Heatmap
-  if (heatData.length > 0 && typeof L.heatLayer === "function") {
+  // Heatmap (only if layerMode includes heat)
+  if (heatData.length > 0 && typeof L.heatLayer === "function"
+      && (layerMode === "both" || layerMode === "heat")) {
     heatLayer = L.heatLayer(heatData, {
       radius: 22,
       blur: 30,
@@ -376,16 +393,46 @@ function makePopup(burn, day) {
 
   // Key details — compact
   html += `<div style="margin-top:8px;font-size:11px;color:#888;line-height:1.6;">`;
-  const show = ["snow_status", "soil_trend", "burn_age", "in_season"];
+  const show = ["snow_status", "burn_age"];
   for (const k of show) {
     if (day[k]) {
       const label = k.replace(/_/g, " ");
       const val = day[k];
-      const highlight = val.includes("MELT") || val.includes("WARMING") || val === "YES";
+      const highlight = val.includes("MELT");
       html += `<span style="color:${highlight ? '#53a8b6' : '#888'};">${label}: <b>${val}</b></span><br>`;
     }
   }
-  html += `</div>`;
+
+  // Soil trend visualization
+  const trendStr = day.soil_trend || "";
+  const trendPerDay = day.soil_trend_per_day;
+  if (trendStr) {
+    const isWarming = trendStr.includes("WARMING") || trendStr.includes("warming");
+    const isCooling = trendStr.includes("cooling");
+    const trendColor = isWarming ? "#e67e22" : isCooling ? "#3498db" : "#888";
+    const arrowCount = Math.min(Math.abs(Math.round((trendPerDay || 0) * 3)), 5);
+    const arrows = isWarming ? "&#9650;".repeat(Math.max(arrowCount, 1))
+                 : isCooling ? "&#9660;".repeat(Math.max(arrowCount, 1))
+                 : "&#9654;";
+
+    html += `<div style="margin:6px 0;padding:6px 8px;background:${trendColor}15;border-left:3px solid ${trendColor};border-radius:0 4px 4px 0;">`;
+    html += `<div style="display:flex;align-items:center;gap:6px;">`;
+    html += `<span style="font-size:14px;color:${trendColor};">${arrows}</span>`;
+    html += `<div>`;
+    html += `<div style="font-weight:bold;color:${trendColor};font-size:12px;">${trendStr}</div>`;
+    if (trendPerDay != null) {
+      const absRate = Math.abs(trendPerDay).toFixed(1);
+      const rateLabel = trendPerDay > 0.5 ? "Strong" : trendPerDay > 0.2 ? "Moderate" : trendPerDay > 0 ? "Slight" : trendPerDay > -0.2 ? "Flat" : "Dropping";
+      html += `<div style="font-size:10px;color:#999;">${rateLabel} — ${absRate}F per day over 14 days</div>`;
+    }
+    html += `</div></div></div>`;
+  }
+
+  // In season
+  if (day.in_season) {
+    const inSeason = day.in_season === "YES";
+    html += `<span style="color:${inSeason ? '#53a8b6' : '#888'};">season: <b>${day.in_season}</b></span>`;
+  }
 
   html += `</div>`;
   return html;

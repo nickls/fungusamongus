@@ -126,7 +126,21 @@ body {
 }
 
 .zoom-btn:hover { background: #0f3460; }
-.zoom-btn.active { background: #0f3460; color: white; border-color: #53a8b6; }
+.zoom-btn.active, .layer-btn.active { background: #0f3460; color: white; border-color: #53a8b6; }
+
+.layer-btn {
+  flex: 1;
+  padding: 8px;
+  border: 1px solid #0f3460;
+  border-radius: 4px;
+  background: #1a1a2e;
+  color: #ccc;
+  cursor: pointer;
+  text-align: center;
+  font-size: 13px;
+  transition: all 0.15s;
+}
+.layer-btn:hover { background: #0f3460; }
 
 /* Species selector */
 .species-bar {
