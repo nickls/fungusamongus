@@ -640,6 +640,98 @@ class TestIntegration:
         assert result["total"] < 20, \
             f"Worst conditions scored {result['total']} — should be <20"
 
+    def test_real_truckee_data(self):
+        """Test with actual Truckee April 2026 data patterns — noisy, not smooth."""
+        weather = make_weather(
+            # Real forecast: 74 to 42 to 68 swing
+            soil_temps=[53, 57, 59, 61, 66, 74, 68, 66, 42, 51, 68, 69, 66, 60],
+            highs=[45, 48, 50, 49, 53, 62, 61, 57, 42, 37, 50, 55, 49, 45],
+            lows=[23, 30, 30, 31, 28, 27, 34, 38, 26, 23, 20, 27, 34, 30],
+            precip_14d=1.6,
+            snow_depths=[0.6, 0, 0, 0, 0, 0, 0, 0, 0.1, 0.3, 0.2, 0.1, 0, 0],
+        )
+        weather["hist_soil_temp"] = [49, 46, 38, 38, 46, 46, 50, 49, 55, 55,
+                                     35, 42, 48, 52, 53, 50, 40, 38, 43, 48,
+                                     50, 52, 54, 48, 42, 45, 50, 52, 48, 50]
+        fire = make_fire(burn_type="Underburn", acres=30, months_ago=5)
+        result = score_burn_site(fire, weather, 5800, "morel", GOOD_TERRAIN)
+        # Should produce a reasonable score, not crash or produce extremes
+        assert 40 <= result["total"] <= 90, \
+            f"Real Truckee data scored {result['total']} — expected 40-90"
+        # Trend should be modest with noisy oscillating data
+        trend = result["details"].get("soil_trend_per_day", 0)
+        assert abs(trend) < 1.5, \
+            f"Noisy data trend {trend} — should be moderate, not extreme"
+
+    def test_real_cold_snap_wednesday(self):
+        """Real pattern: warm week then snow Wednesday (day 3)."""
+        weather = make_weather(
+            soil_temps=[53, 57, 59, 61, 66, 74, 68, 66, 42, 51, 68, 69, 66, 60],
+            highs=[45, 48, 50, 49, 53, 62, 61, 57, 42, 37, 50, 55, 49, 45],
+            lows=[23, 30, 30, 31, 28, 27, 34, 38, 26, 23, 20, 27, 34, 30],
+            precip_14d=1.6,
+            snow_depths=[0.6, 0, 0, 0, 0, 0, 0, 0, 0.1, 0.3, 0.2, 0.1, 0, 0],
+        )
+        weather["hist_soil_temp"] = [45, 47, 48, 50, 52, 50, 48, 50, 52, 55,
+                                     53, 50, 48, 50, 52, 54, 52, 50, 48, 50,
+                                     52, 53, 54, 55, 53, 50, 52, 54, 55, 55]
+        fire = make_fire()
+        day0_wx = make_day_weather(weather, 0)  # today: warm
+        day3_wx = make_day_weather(weather, 3)  # wednesday: cold snap, snow
+        r0 = score_burn_site(fire, day0_wx, 5500, "morel", GOOD_TERRAIN)
+        r3 = score_burn_site(fire, day3_wx, 5500, "morel", GOOD_TERRAIN)
+        # Day 3 has 42F soil + snow — should score meaningfully lower
+        assert r3["total"] < r0["total"], \
+            f"Cold snap day 3 ({r3['total']}) should be lower than day 0 ({r0['total']})"
+
+    def test_noisy_precip_rain_events(self):
+        """Real precip pattern: mostly dry with a few big events."""
+        weather = make_weather(
+            soil_temps=[52] * 14, highs=[60] * 14, lows=[38] * 14,
+            precip_14d=1.6,  # this gets spread evenly in make_weather
+        )
+        # Override with real pattern: mostly 0 with spikes
+        weather["hist_precip"] = [0, 0, 0, 0.8, 0, 0, 0, 0.1, 0, 0,
+                                  0, 0, 0, 0, 0.5, 0.3, 0, 0, 0, 0,
+                                  0.29, 0.50, 0.78, 0.01, 0, 0, 0, 0, 0, 0]
+        weather["hist_soil_temp"] = [48] * 30
+        fire = make_fire()
+        result = score_burn_site(fire, weather, 5500, "morel", GOOD_TERRAIN)
+        # Should detect rain events (3 events > 0.4in)
+        assert "rain_events" in result["details"], "Should report rain events"
+
+    def test_snow_appears_mid_forecast(self):
+        """Snow absent then appearing mid-forecast should affect score."""
+        weather = make_weather(
+            soil_temps=[55, 55, 55, 55, 55, 55, 55, 55, 40, 35, 38, 45, 50, 52],
+            highs=[60] * 14, lows=[38] * 14,
+            precip_14d=1.5,
+            snow_depths=[0, 0, 0, 0, 0, 0, 0, 0, 3, 5, 4, 2, 0, 0],
+        )
+        weather["hist_soil_temp"] = [50] * 30
+        fire = make_fire()
+        # Day 0 (no snow, warm) vs Day 3 (snow, cold)
+        day0_wx = make_day_weather(weather, 0)
+        day3_wx = make_day_weather(weather, 3)
+        r0 = score_burn_site(fire, day0_wx, 5500, "morel", GOOD_TERRAIN)
+        r3 = score_burn_site(fire, day3_wx, 5500, "morel", GOOD_TERRAIN)
+        assert r0["total"] > r3["total"], \
+            f"Clear day 0 ({r0['total']}) should beat snowy day 3 ({r3['total']})"
+
+    def test_extreme_soil_swing_doesnt_crash(self):
+        """Soil going 74->42->68 in 3 days should not produce NaN or crash."""
+        weather = make_weather(
+            soil_temps=[50, 52, 55, 60, 74, 42, 68, 55, 50, 48, 52, 55, 53, 50],
+            highs=[60] * 14, lows=[35] * 14, precip_14d=1.5,
+        )
+        weather["hist_soil_temp"] = [45, 48, 50, 52, 55, 42, 38, 45, 50, 55,
+                                     60, 55, 48, 45, 50, 52, 48, 42, 45, 50,
+                                     52, 55, 50, 48, 52, 55, 53, 50, 52, 50]
+        fire = make_fire()
+        result = score_burn_site(fire, weather, 5500, "morel", GOOD_TERRAIN)
+        assert 0 <= result["total"] <= 105
+        assert result["details"].get("soil_trend_per_day") is not None
+
     def test_score_range_is_0_to_100(self):
         """No scenario should produce a score outside 0-100 (plus terrain bonus)."""
         for soil in [30, 45, 52, 65]:
