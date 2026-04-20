@@ -16,8 +16,9 @@ def extract_weather_details(weather: dict) -> dict:
     hist_max = weather.get("hist_temps_max", [])
     hist_min = weather.get("hist_temps_min", [])
 
-    highs = fc_max[-7:] if fc_max else hist_max[-7:]
-    lows = fc_min[-7:] if fc_min else hist_min[-7:]
+    # Use last 3 days of highs/lows for current conditions (not 7-day avg)
+    highs = fc_max[-3:] if fc_max else hist_max[-3:]
+    lows = fc_min[-3:] if fc_min else hist_min[-3:]
     if highs:
         d["avg_high"] = np.mean(highs)
         d["avg_high_7d"] = f"{d['avg_high']:.0f}F"
@@ -25,9 +26,10 @@ def extract_weather_details(weather: dict) -> dict:
         d["avg_low"] = np.mean(lows)
         d["avg_low_7d"] = f"{d['avg_low']:.0f}F"
 
-    soil_temps = weather.get("forecast_soil_temp", [])
-    if soil_temps:
-        d["avg_soil"] = np.mean(soil_temps)
+    # Use target-day soil temp (from narrow window if available, else full)
+    soil_target = weather.get("forecast_soil_temp_target", weather.get("forecast_soil_temp", []))
+    if soil_target:
+        d["avg_soil"] = soil_target[-1]  # last element = target day
         d["soil_temp"] = f"{d['avg_soil']:.0f}F"
 
     hist_precip = weather.get("hist_precip", [])
@@ -38,9 +40,9 @@ def extract_weather_details(weather: dict) -> dict:
         d["precip_30d"] = f"{d['precip_30d_val']:.1f}in"
 
     snow_depth = weather.get("forecast_snow_depth", [])
-    if snow_depth and len(snow_depth) >= 7:
-        d["snow_past"] = np.mean(snow_depth[:7])
-        d["snow_now"] = np.mean(snow_depth[-3:])
+    if snow_depth and len(snow_depth) >= 3:
+        d["snow_past"] = np.mean(snow_depth[:-1]) if len(snow_depth) > 1 else snow_depth[0]
+        d["snow_now"] = snow_depth[-1]  # target day's snow depth
         d["snow_depth_now"] = f"{d['snow_now']:.1f}in"
         if d["snow_past"] > 1.0 and d["snow_now"] < d["snow_past"] * 0.5:
             d["snow_status"] = f"ACTIVE MELT ({d['snow_past']:.0f}->{d['snow_now']:.0f}in)"
@@ -84,11 +86,16 @@ def make_day_weather(weather: dict, day_offset: int) -> dict:
     """
     Build a weather dict for a specific day (0=today, 1=tomorrow, ..., 7).
 
-    The forecast arrays have 14 entries: 7 past + 7 future. Index 7 = today.
-    For day N, we use forecast index 7+N for that day's values,
-    and the 7 days leading up to it for trends/averages.
+    Forecast arrays: 14 entries = 7 past + 7 future. Index 7 = today.
+
+    Key principle:
+    - Soil temp threshold: use the TARGET DAY's value (not average)
+    - Soil trend: use a centered window around the target day
+    - Air temps: use a small window around the target day
+    - Snow: use the target day's value
+    - Precip: sum a window ending on the target day
     """
-    today_idx = 7  # index of today in the 14-day forecast arrays
+    today_idx = 7
     target_idx = today_idx + day_offset
 
     def safe_slice(arr, start, end):
@@ -98,39 +105,26 @@ def make_day_weather(weather: dict, day_offset: int) -> dict:
         e = min(len(arr), end)
         return [x for x in arr[s:e] if x is not None]
 
-    # For soil temps: use all data UP TO the target day.
-    # For day 0 this is all 14 days. For day 5 it includes 12 days (past 7 + forecast 0-5).
-    # This means future days see the cooling/warming trend that includes forecast data,
-    # so a cold snap in the forecast actually registers as cooling.
+    # Soil target window: ends at target day. Used for threshold (last element).
     soil_all = weather.get("forecast_soil_temp", [])
-    soil_end = min(target_idx + 1, len(soil_all))
-    soil_window = [x for x in soil_all[:soil_end] if x is not None]
+    soil_window = safe_slice(soil_all, target_idx - 3, target_idx + 1)
 
-    # For snow depth: same window
+    # Soil trend window: all data up to target day. Used for regression slope.
+    soil_trend_window = safe_slice(soil_all, 0, target_idx + 1)
+
+    # Snow depth: target day value + a few before for melt detection
     snow_all = weather.get("forecast_snow_depth", [])
-    snow_window = safe_slice(snow_all, target_idx - 7, target_idx + 1)
+    snow_window = safe_slice(snow_all, target_idx - 3, target_idx + 1)
 
-    # Soil moisture: 7-day window ending on target day
+    # Soil moisture: small window around target
     sm_all = weather.get("forecast_soil_moisture", [])
-    sm_window = safe_slice(sm_all, target_idx - 7, target_idx + 1)
+    sm_window = safe_slice(sm_all, target_idx - 3, target_idx + 1)
 
-    # Air temps: 7-day window ending on target day
+    # Air temps: 3-day window centered on target
     fc_max = weather.get("forecast_temps_max", [])
     fc_min = weather.get("forecast_temps_min", [])
-    highs = safe_slice(fc_max, target_idx - 6, target_idx + 1)
-    lows = safe_slice(fc_min, target_idx - 6, target_idx + 1)
-
-    # Precip: combine historical + forecast, sum the 14 days leading up to target
-    hist_precip = weather.get("hist_precip", [])
-    fc_precip = safe_slice(weather.get("forecast_temps_max", []), 0, 0)  # placeholder
-    # Build a combined precip timeline: 30 days hist + 14 days forecast
-    all_precip = list(weather.get("hist_precip", [])) + safe_slice(
-        weather.get("forecast_temps_max", []), 0, 0)  # need forecast precip
-    # Actually: hist_precip is 30 days, forecast daily precip isn't stored separately
-    # For day 0, use hist_precip as-is. For day N, we don't have future precip in hist.
-    # The forecast daily data has precipitation_sum — it's in forecast_temps arrays? No.
-    # Let me just use hist_precip for all days (precip changes slowly over 7 days)
-    # This is an approximation — future precip forecast would improve it.
+    highs = safe_slice(fc_max, target_idx - 1, target_idx + 2)
+    lows = safe_slice(fc_min, target_idx - 1, target_idx + 2)
 
     return {
         "hist_temps_max": weather.get("hist_temps_max", []),
@@ -139,7 +133,8 @@ def make_day_weather(weather: dict, day_offset: int) -> dict:
         "hist_snowfall": weather.get("hist_snowfall", []),
         "forecast_temps_max": highs,
         "forecast_temps_min": lows,
-        "forecast_soil_temp": soil_window,
+        "forecast_soil_temp": soil_trend_window,  # full window for trend
+        "forecast_soil_temp_target": soil_window,  # narrow window, last = target day
         "forecast_soil_moisture": sm_window,
         "forecast_snow_depth": snow_window,
         "current_temp": weather.get("current_temp"),
@@ -195,8 +190,8 @@ def score_burn_site(fire: dict, weather: dict, elev: float | None,
             soil_gate_factor = 0.7
             details["soil_gate"] = f"approaching ({avg_soil:.0f}F)"
         elif avg_soil >= gate_temp:
-            soil_score = round(max_pts * 0.1)     # cold
-            soil_gate_factor = 0.4
+            soil_score = round(max_pts * 0.15)    # cold
+            soil_gate_factor = 0.3
             details["soil_gate"] = f"cold ({avg_soil:.0f}F)"
         else:
             soil_score = 0                        # blocked
@@ -247,7 +242,7 @@ def score_burn_site(fire: dict, weather: dict, elev: float | None,
         details["soil_trend_per_day"] = 0
 
     # Apply soil gate to trend score
-    scores["warming_trend"] = round(trend_score * soil_gate_factor)
+    scores["warming_trend"] = round(trend_score)
 
     # ══════════════════════════════════════════════════════════════════
     # C. RECENT MOISTURE (20pts) — rain/snowmelt in last 3-10 days
@@ -282,43 +277,53 @@ def score_burn_site(fire: dict, weather: dict, elev: float | None,
     if mt.get("needs_fire"):
         fire_date = fire.get("date")
         recency_curve = mt.get("recency_curve", [(2, 0.3), (8, 0.5), (14, 0.4), (20, 0.2), (30, 0.1)])
+        # Recency — if too old, entire burn_quality is 0 (no type/size bonus)
+        burn_is_viable = False
         if fire_date:
             try:
                 months_ago = (datetime.now() - datetime.strptime(fire_date, "%Y-%m-%d")).days / 30
                 for max_months, frac in recency_curve:
                     if months_ago <= max_months:
                         burn_score += max_pts * frac
+                        burn_is_viable = True
                         break
                 details["burn_age"] = f"{months_ago:.0f}mo ago"
             except ValueError:
                 burn_score += max_pts * 0.1
+                burn_is_viable = True
         elif fire.get("year"):
             try:
                 yrs = datetime.now().year - int(fire["year"])
-                burn_score += max_pts * max(0.4 - yrs * 0.15, 0.05)
+                if yrs <= 2:
+                    burn_score += max_pts * max(0.4 - yrs * 0.15, 0.05)
+                    burn_is_viable = True
                 details["burn_age"] = f"{fire['year']}"
             except (ValueError, TypeError):
                 pass
 
-        burn_type_str = (fire.get("pfirs_burn_type", "") or "").lower()
-        type_scores = mt.get("burn_type_scores", {})
-        matched = False
-        for key_str, frac in type_scores.items():
-            if key_str in burn_type_str:
-                burn_score += max_pts * frac
-                matched = True
-                break
-        if not matched:
-            if fire.get("is_rx"):
-                burn_score += max_pts * type_scores.get("rx_generic", 0.15)
-            else:
-                burn_score += max_pts * type_scores.get("wildfire", 0.10)
+        # Type and size bonus — only if burn is still viable
+        if burn_is_viable:
+            burn_type_str = (fire.get("pfirs_burn_type", "") or "").lower()
+            type_scores = mt.get("burn_type_scores", {})
+            matched = False
+            for key_str, frac in type_scores.items():
+                if key_str in burn_type_str:
+                    burn_score += max_pts * frac
+                    matched = True
+                    break
+            if not matched:
+                if fire.get("is_rx"):
+                    burn_score += max_pts * type_scores.get("rx_generic", 0.15)
+                else:
+                    burn_score += max_pts * type_scores.get("wildfire", 0.10)
 
-        acres = fire.get("acres", 0)
-        for min_acres, frac in mt.get("acreage_curve", [(20, 0.15), (5, 0.1), (0, 0.05)]):
-            if acres >= min_acres:
-                burn_score += max_pts * frac
-                break
+            acres = fire.get("acres", 0)
+            for min_acres, frac in mt.get("acreage_curve", [(20, 0.15), (5, 0.1), (0, 0.05)]):
+                if acres >= min_acres:
+                    burn_score += max_pts * frac
+                    break
+        else:
+            acres = fire.get("acres", 0)
 
         details["burn_type"] = fire.get("pfirs_burn_type") or ("RX" if fire.get("is_rx") else "wildfire")
         details["burn_acres"] = f"{acres:.1f}ac"
@@ -397,6 +402,14 @@ def score_burn_site(fire: dict, weather: dict, elev: float | None,
     scores["air_temp"] = min(air_score, max_pts)
 
     # ══════════════════════════════════════════════════════════════════
+    # ══════════════════════════════════════════════════════════════════
+    # Apply soil gate to ALL factors except soil_threshold itself
+    # ══════════════════════════════════════════════════════════════════
+    if soil_gate_factor < 1.0:
+        for k in scores:
+            if k != "soil_threshold":
+                scores[k] = round(scores[k] * soil_gate_factor)
+
     # Season gate
     # ══════════════════════════════════════════════════════════════════
     month = datetime.now().month

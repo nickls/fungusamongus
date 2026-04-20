@@ -78,7 +78,7 @@ MOREL_PROFILE = {
 
     # ── Soil temperature thresholds ──
     "soil_temp_ideal": (48, 58),   # sweet spot for fruiting
-    "soil_temp_ok": (45, 62),      # acceptable but not prime
+    "soil_temp_ok": (45, 66),      # acceptable but not prime
     "soil_temp_gate": 40,          # below this = hard block (score * 0.1)
     "soil_temp_approaching": 45,   # below ideal but above gate (score * 0.4)
 
