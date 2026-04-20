@@ -20,7 +20,8 @@ from config import MUSHROOM_TYPES
 
 # ── Daily status classification ──
 
-def classify_day(soil_temp, prev_soil_temp, precip, snow_depth, had_warmth, config):
+def classify_day(soil_temp, prev_soil_temp, precip, snow_depth, had_warmth, config,
+                 prev_status=None):
     """
     Classify a single day's conditions into START / START_GROW / GROW / BAD.
 
@@ -30,7 +31,8 @@ def classify_day(soil_temp, prev_soil_temp, precip, snow_depth, had_warmth, conf
         precip: precipitation (inches) for this day
         snow_depth: snow depth (inches) for this day
         had_warmth: whether soil was ever >45F before this day
-        config: dict with thresholds (start_soil_min, grow_soil_min, etc.)
+        config: dict with thresholds
+        prev_status: previous day's status (for oscillation filtering)
     """
     start_min = config.get("start_soil_min", 43)
     start_max = config.get("start_soil_max", 50)
@@ -46,7 +48,7 @@ def classify_day(soil_temp, prev_soil_temp, precip, snow_depth, had_warmth, conf
     if soil_temp <= freeze and had_warmth:
         return "BAD"
 
-    # Deep snowpack = inaccessible and frozen
+    # Deep snowpack
     if snow_depth is not None and snow_depth > bad_snow:
         return "BAD"
 
@@ -54,28 +56,38 @@ def classify_day(soil_temp, prev_soil_temp, precip, snow_depth, had_warmth, conf
     if soil_temp < start_min:
         return "BAD"
 
+    # Too hot — past prime
+    if soil_temp > grow_max:
+        return "BAD"
+
     is_warming = prev_soil_temp is not None and soil_temp > prev_soil_temp
     in_start_range = start_min <= soil_temp <= start_max
     in_grow_range = grow_min <= soil_temp <= grow_max
     has_moisture = precip > 0.1 or (snow_depth is not None and 0 < snow_depth <= bad_snow)
 
-    # START: soil warming into the initiation range + moisture present
-    if in_start_range and is_warming and has_moisture:
-        if in_grow_range:
+    # Anti-oscillation: if previous day was BAD and we just popped above start_min,
+    # require warming trend (not just a single day crossing). A true START needs
+    # the previous day to also be trending up, not bouncing from a crash.
+    recovering_from_bad = prev_status == "BAD"
+
+    # START: soil warming into initiation range + moisture
+    # Also: soil already in grow range but a NEW moisture event arrives (rain trigger)
+    if has_moisture:
+        if in_start_range and is_warming and not recovering_from_bad:
+            return "START_GROW" if in_grow_range else "START"
+        if in_grow_range and precip > 0.3:
+            # Significant rain event while in grow range = can trigger new starts
             return "START_GROW"
-        return "START"
 
-    # START without moisture: warming into range but dry
-    if in_start_range and is_warming:
-        return "START"  # marginal start — warming but no moisture trigger
-
-    # GROW: in the sustained growth range
+    # GROW: in the sustained growth range with or without moisture
     if in_grow_range:
         return "GROW"
 
-    # Above grow range = past prime
-    if soil_temp > grow_max:
-        return "BAD"  # too hot
+    # In start range but not warming or no moisture — marginal
+    if in_start_range:
+        if is_warming:
+            return "START"  # warming but dry
+        return "GROW"  # holding in range, not warming — treat as marginal grow
 
     return "BAD"
 
@@ -99,6 +111,7 @@ def build_timeline(weather, config):
 
     timeline = []
     had_warmth = False
+    prev_status = None
 
     for i in range(min(44, len(all_soil))):
         soil = all_soil[i]
@@ -110,8 +123,9 @@ def build_timeline(weather, config):
             had_warmth = True
 
         status = classify_day(soil, prev, precip, snow if snow is not None else 0,
-                              had_warmth, config)
+                              had_warmth, config, prev_status)
         timeline.append(status)
+        prev_status = status
 
     # Pad to 44 if needed
     while len(timeline) < 44:
@@ -137,8 +151,8 @@ def extract_features(timeline, weather, target_day=30, config=None):
     if config is None:
         config = {}
 
-    lookback_min = config.get("start_lookback_min", 14)
-    lookback_max = config.get("start_lookback_max", 28)
+    lookback_min = config.get("start_lookback_min", 7)
+    lookback_max = config.get("start_lookback_max", 30)
     max_bad_streak = config.get("max_bad_streak", 3)
 
     # Count START days in the lookback window
@@ -233,7 +247,7 @@ def classify_phase(features, config=None):
     """
     if config is None:
         config = {}
-    min_start = config.get("min_start_days", 3)
+    min_start = config.get("min_start_days", 1)
     min_grow = config.get("min_grow_days", 14)
 
     start = features["start_days"]
@@ -252,40 +266,44 @@ def classify_phase(features, config=None):
 
 # ── Readiness score (will be replaced by regression coefficients) ──
 
+# Learned from 21 labeled scenarios via logistic regression (95% accuracy)
+# See utils/fit_regression.py for details. Re-fit with:
+#   python -m utils.fit_regression --save coefficients.json
+READINESS_COEFFICIENTS = {
+    "start_days": 0.111362,
+    "grow_days": 0.260611,
+    "max_bad_streak": -0.088457,
+    "growth_was_reset": -0.030186,
+    "soil_avg_14d": -0.252205,
+    "current_soil": 0.271431,
+    "warming_rate": 0.466214,
+    "precip_events": 0.877758,
+    "is_currently_good": 0.005918,
+    "intercept": -8.348297,
+}
+
+
+def score_readiness(features, config=None):
+    """
+    Readiness score (0-100) using logistic regression coefficients
+    learned from 21 labeled scenarios.
+
+    Returns probability * 100, where probability = sigmoid(coefficients · features).
+    """
+    coefs = READINESS_COEFFICIENTS
+    z = coefs["intercept"]
+    for key in coefs:
+        if key != "intercept" and key in features:
+            z += coefs[key] * features[key]
+
+    # Sigmoid → probability → scale to 0-100
+    prob = 1 / (1 + math.exp(-z))
+    return round(prob * 100)
+
+
 def score_readiness_manual(features, config=None):
-    """
-    Hand-tuned readiness score. Placeholder — will be replaced by
-    logistic regression coefficients from the 21 labeled scenarios.
-    """
-    if config is None:
-        config = {}
-    min_start = config.get("min_start_days", 3)
-    min_grow = config.get("min_grow_days", 14)
-
-    score = 0
-
-    # Start days (0-30)
-    start_frac = min(features["start_days"] / max(min_start, 1), 1.0)
-    score += 30 * start_frac
-
-    # Grow days (0-40)
-    grow_frac = min(features["grow_days"] / max(min_grow, 1), 1.0)
-    score += 40 * grow_frac
-
-    # No bad streaks (0-20)
-    if features["max_bad_streak"] < 3:
-        score += 20
-    elif features["max_bad_streak"] < 5:
-        score += 10
-
-    # Currently good (0-10)
-    score += 10 * features["is_currently_good"]
-
-    # Reset penalty
-    if features["growth_was_reset"]:
-        score *= 0.5
-
-    return round(min(score, 100))
+    """Legacy hand-tuned readiness. Use score_readiness() instead."""
+    return score_readiness(features, config)
 
 
 # ── Potential score (site quality — no weather dependency) ──

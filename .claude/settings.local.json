@@ -12,11 +12,14 @@
       "WebFetch(domain:ssl.arb.ca.gov)",
       "Bash(.venv/bin/python morel_finder.py)",
       "Bash(.venv/bin/python -u morel_finder.py)",
-      "Bash(.venv/bin/python -m pytest tests/test_scoring.py)",
       "WebFetch(domain:lfps.usgs.gov)",
       "WebFetch(domain:www.landfire.gov)",
       "WebFetch(domain:files.pythonhosted.org)",
-      "Bash(git commit:*)"
+      "Bash(.venv/bin/python:*)",
+      "Bash(git commit:*)",
+      "WebFetch(domain:github.com)",
+      "Bash(git add:*)",
+      "Bash(.venv/bin/pip install:*)"
     ]
   },
   "sandbox": {

@@ -135,7 +135,7 @@ SCENARIOS = [
 ]
 
 FEATURE_NAMES = [
-    "start_days", "grow_days", "max_bad_streak", "growth_reset",
+    "start_days", "grow_days", "max_bad_streak", "growth_was_reset",
     "soil_avg_14d", "current_soil", "warming_rate", "precip_events",
     "is_currently_good",
 ]
