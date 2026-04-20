@@ -64,3 +64,35 @@ def aspect_label(aspect: float | None) -> str:
         return "?"
     dirs = ["N", "NE", "E", "SE", "S", "SW", "W", "NW"]
     return dirs[int((aspect + 22.5) % 360 / 45)]
+
+
+def get_best_aspect(lat: float, lon: float, offset_m: float = 150) -> dict:
+    """
+    Sample 5 points (center + 4 cardinal at offset_m) and return the
+    slope/aspect dict with the most south-facing aspect. A burn with
+    ANY south-facing terrain should get credit.
+    """
+    deg = offset_m / 111000
+    points = [
+        (lat, lon),
+        (lat + deg, lon),
+        (lat - deg, lon),
+        (lat, lon + deg),
+        (lat, lon - deg),
+    ]
+    results = [get_slope_aspect(p[0], p[1]) for p in points]
+
+    def south_score(r):
+        a = r.get("aspect")
+        if a is None:
+            return -999
+        # Closer to 180 (south) = better
+        return -abs(a - 180)
+
+    best = max(results, key=south_score)
+
+    # Also store centroid for reference
+    centroid = results[0]
+    best["aspect_centroid"] = centroid.get("aspect")
+    best["slope_centroid"] = centroid.get("slope")
+    return best

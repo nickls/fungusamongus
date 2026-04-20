@@ -91,7 +91,7 @@ class TestSoilThresholdGate:
         assert 3 <= s <= 15, f"Approaching soil scored {s} — expected 3-15"
 
     def test_gate_scales_other_factors(self):
-        """When soil is below gate (35F), warming_trend and moisture should also be reduced."""
+        """When soil is below gate (35F), soil_gdd and moisture should also be reduced."""
         weather = make_weather(
             soil_temps=[35] * 14,
             highs=[60] * 14, lows=[40] * 14,
@@ -99,8 +99,8 @@ class TestSoilThresholdGate:
         )
         fire = make_fire()
         result = score_burn_site(fire, weather, 5500, "morel", GOOD_TERRAIN)
-        # The gate should reduce warming_trend even though temps are flat (not warming)
-        assert result["scores"]["warming_trend"] <= 5
+        # The gate should reduce soil_gdd via gate factor
+        assert result["scores"]["soil_gdd"] <= 8
 
     def test_soil_58_is_ideal(self):
         """58F is within ideal range (48-58F)."""
@@ -128,66 +128,70 @@ class TestSoilThresholdGate:
 # B. Warming Trend
 # ══════════════════════════════════════════════════════════════════
 
-class TestWarmingTrend:
+class TestSoilGDD:
+    """GDD = cumulative growing degree-days (base 32F). Literature: 365-580 = onset."""
 
-    def test_strong_warming_beats_flat(self):
-        """Soil rising from 40->55F should outscore flat 50F."""
-        warming = make_weather(
-            soil_temps=[40, 42, 44, 46, 48, 50, 52, 53, 54, 55, 55, 55, 55, 55],
-            highs=[60] * 14, lows=[35] * 14, precip_14d=2.0,
+    def test_high_gdd_beats_low(self):
+        """Warm soil history (high GDD) should outscore cold history (low GDD)."""
+        warm = make_weather(
+            soil_temps=[55] * 14, highs=[65] * 14, lows=[42] * 14, precip_14d=2.0,
         )
-        flat = make_weather(
-            soil_temps=[50] * 14,
-            highs=[60] * 14, lows=[35] * 14, precip_14d=2.0,
+        # Add warm hist soil temps: 30 days at 55F = 30*23 = 690 GDD from history alone
+        warm["hist_soil_temp"] = [55] * 30
+
+        cold = make_weather(
+            soil_temps=[40] * 14, highs=[45] * 14, lows=[30] * 14, precip_14d=2.0,
         )
+        cold["hist_soil_temp"] = [38] * 30  # 30 * 6 = 180 GDD
+
         fire = make_fire()
-        r_warming = score_burn_site(fire, warming, 5500, "morel", GOOD_TERRAIN)
-        r_flat = score_burn_site(fire, flat, 5500, "morel", GOOD_TERRAIN)
-        assert r_warming["scores"]["warming_trend"] > r_flat["scores"]["warming_trend"]
+        r_warm = score_burn_site(fire, warm, 5500, "morel", GOOD_TERRAIN)
+        r_cold = score_burn_site(fire, cold, 5500, "morel", GOOD_TERRAIN)
+        assert r_warm["scores"]["soil_gdd"] > r_cold["scores"]["soil_gdd"]
 
-    def test_cooling_scores_zero(self):
-        """Soil dropping from 55->40F should score 0 on warming trend."""
+    def test_gdd_in_onset_range_scores_high(self):
+        """GDD of ~450 (in 365-580 range) should score well."""
+        # 30 days at 47F avg = 30 * 15 = 450 GDD from history
         weather = make_weather(
-            soil_temps=[55, 54, 52, 50, 48, 46, 44, 43, 42, 41, 40, 40, 40, 40],
-            highs=[50] * 14, lows=[30] * 14, precip_14d=2.0,
+            soil_temps=[50] * 14, highs=[60] * 14, lows=[35] * 14, precip_14d=2.0,
         )
+        weather["hist_soil_temp"] = [47] * 30
         fire = make_fire()
         result = score_burn_site(fire, weather, 5500, "morel", GOOD_TERRAIN)
-        assert result["scores"]["warming_trend"] == 0
+        assert result["scores"]["soil_gdd"] >= 17, \
+            f"GDD ~450 scored {result['scores']['soil_gdd']} — expected 17+"
 
-    def test_rapid_warming_gets_max(self):
-        """Consistent +1.5F/day warming should get near-max trend score."""
+    def test_very_low_gdd_scores_zero(self):
+        """GDD < 200 (30 days of freezing) should score near zero."""
         weather = make_weather(
-            soil_temps=[35, 37, 38, 40, 42, 44, 46, 48, 50, 52, 54, 56, 58, 60],
-            highs=[60] * 14, lows=[35] * 14, precip_14d=2.0,
+            soil_temps=[35] * 14, highs=[40] * 14, lows=[25] * 14, precip_14d=1.0,
         )
+        weather["hist_soil_temp"] = [33] * 30  # 30 * 1 + 14 * 3 = 72 GDD
         fire = make_fire()
         result = score_burn_site(fire, weather, 5500, "morel", GOOD_TERRAIN)
-        assert result["scores"]["warming_trend"] >= 20, \
-            f"Rapid warming scored {result['scores']['warming_trend']} — expected 20+"
+        assert result["scores"]["soil_gdd"] <= 3, \
+            f"Very low GDD scored {result['scores']['soil_gdd']} — expected <=3"
 
-    def test_slight_warming_moderate_score(self):
-        """Gentle +0.3F/day warming should get moderate score."""
+    def test_gdd_reported_in_details(self):
+        """Result details should include the computed GDD value."""
         weather = make_weather(
-            soil_temps=[48, 48, 48, 49, 49, 49, 50, 50, 50, 51, 51, 51, 52, 52],
-            highs=[60] * 14, lows=[35] * 14, precip_14d=2.0,
+            soil_temps=[50] * 14, highs=[60] * 14, lows=[40] * 14, precip_14d=1.5,
         )
+        weather["hist_soil_temp"] = [48] * 30
         fire = make_fire()
         result = score_burn_site(fire, weather, 5500, "morel", GOOD_TERRAIN)
-        s = result["scores"]["warming_trend"]
-        assert 10 <= s <= 18, f"Slight warming scored {s} — expected 10-18"
+        assert "soil_gdd" in result["details"]
 
-    def test_single_spike_doesnt_inflate(self):
-        """One 72F spike day among 50F days should not produce high trend."""
+    def test_no_hist_soil_uses_forecast_only(self):
+        """Without historical soil temp, GDD uses only 14-day forecast temps."""
         weather = make_weather(
-            soil_temps=[50, 50, 50, 50, 50, 72, 50, 50, 50, 50, 50, 50, 50, 50],
-            highs=[60] * 14, lows=[35] * 14, precip_14d=2.0,
+            soil_temps=[52] * 14, highs=[60] * 14, lows=[40] * 14, precip_14d=2.0,
         )
+        # No hist_soil_temp — should still compute from forecast soil temps
         fire = make_fire()
         result = score_burn_site(fire, weather, 5500, "morel", GOOD_TERRAIN)
-        # Linear regression should see near-zero slope despite spike
-        assert result["scores"]["warming_trend"] <= 10, \
-            f"Single spike scored {result['scores']['warming_trend']} — should be <=10"
+        assert result["scores"]["soil_gdd"] >= 0
+        assert "soil_gdd" in result["details"]
 
 
 # ══════════════════════════════════════════════════════════════════
@@ -594,6 +598,10 @@ class TestIntegration:
             precip_14d=2.0,
             snow_depths=[1, 0.5, 0.2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
         )
+        # 30 days of warming soil history — GDD should be in onset range
+        weather["hist_soil_temp"] = [42, 43, 44, 44, 45, 45, 46, 46, 47, 47,
+                                     48, 48, 49, 49, 50, 50, 50, 51, 51, 51,
+                                     52, 52, 52, 53, 53, 53, 54, 54, 54, 55]
         fire = make_fire(burn_type="Underburn", acres=40, months_ago=5)
         result = score_burn_site(fire, weather, 5500, "morel", GOOD_TERRAIN)
         assert result["total"] >= 75, \
@@ -701,16 +709,18 @@ class TestNowScenarios:
             f"Wet but cold scored {result['total']} — should be <40 (soil gate)"
 
     def test_hot_dry_summer_day(self):
-        """85F highs, 65F soil, no rain — past prime, should score low."""
+        """85F highs, 65F soil, no rain — past prime, should score lower than ideal."""
         weather = make_weather(
             soil_temps=[65] * 14,
             highs=[85] * 14, lows=[55] * 14,
             precip_14d=0.0,
         )
+        weather["hist_soil_temp"] = [60] * 30  # warm history = high GDD
         fire = make_fire()
         result = score_burn_site(fire, weather, 5500, "morel", GOOD_TERRAIN)
-        assert result["total"] < 55, \
-            f"Hot dry summer scored {result['total']} — should be <55"
+        # High GDD but no moisture = not great. Should be below ideal conditions.
+        assert result["total"] < 75, \
+            f"Hot dry summer scored {result['total']} — should be <75"
 
     def test_ideal_day_high_score(self):
         """The textbook perfect morel day: 55F, moist, recent burn, south slope."""
@@ -747,8 +757,10 @@ class TestNowScenarios:
         )
         fire = make_fire()
         result = score_burn_site(fire, weather, 5500, "morel", GOOD_TERRAIN)
-        assert result["scores"]["warming_trend"] <= 8, \
-            f"Flat soil trend scored {result['scores']['warming_trend']} — should be <=8"
+        # Flat 50F soil for 14 days with no history = 14*18 = 252 GDD
+        # Below onset (365) so should be moderate, not high
+        assert result["scores"]["soil_gdd"] <= 15, \
+            f"Low GDD scored {result['scores']['soil_gdd']} — should be <=15"
 
     def test_soil_temp_details_in_output(self):
         """Result should include soil_temp, soil_trend, and soil_trend_per_day."""

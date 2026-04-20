@@ -5,8 +5,8 @@ const LOCAL_BOUNDS = [[39.0, -120.65], [39.65, -119.75]];
 const BASIN_BOUNDS = [[38.5, -121.3], [39.9, -119.3]];
 
 const FACTORS = [
-  { key: "soil_threshold", label: "Soil Temp", max: 25, default: 10, color: "#c0392b", tip: "Is soil 48-58F? Hard gate — below 40F, entire score is crushed." },
-  { key: "warming_trend", label: "Warming Trend", max: 25, default: 5, color: "#e67e22", tip: "Is soil temp rising over 2-3 weeks? The actual emergence trigger." },
+  { key: "soil_threshold", label: "Soil Temp", max: 25, default: 10, color: "#c0392b", tip: "Is soil 45-58F? Hard gate — below 38F, entire score is crushed. Literature: onset at 43F." },
+  { key: "soil_gdd", label: "Soil GDD", max: 25, default: 5, color: "#e67e22", tip: "Cumulative growing degree-days (base 32F). Literature: 365-580 GDD predicts morel onset." },
   { key: "recent_moisture", label: "Moisture", max: 20, default: 5, color: "#2980b9", tip: "Rain or snowmelt in last 3-10 days. Drives fruiting yield." },
   { key: "burn_quality", label: "Burn Quality", max: 15, default: 5, color: "#f39c12", tip: "Burn recency (3-8mo ideal), type (underburn > pile), acreage." },
   { key: "sun_aspect", label: "Sun/Aspect", max: 10, default: 4, color: "#27ae60", tip: "South-facing slopes melt first. Includes slope angle + elevation band." },

@@ -22,6 +22,7 @@ def get_weather(lat: float, lon: float) -> dict[str, Any]:
         "start_date": start.isoformat(),
         "end_date": (today - timedelta(days=1)).isoformat(),
         "daily": "temperature_2m_max,temperature_2m_min,precipitation_sum,snowfall_sum",
+        "hourly": "soil_temperature_0_to_7cm",
         "temperature_unit": "fahrenheit",
         "precipitation_unit": "inch",
         "timezone": "America/Los_Angeles",
@@ -62,6 +63,7 @@ def get_weather(lat: float, lon: float) -> dict[str, Any]:
         "lat": lat, "lon": lon,
         "hist_temps_max": [], "hist_temps_min": [],
         "hist_precip": [], "hist_snowfall": [],
+        "hist_soil_temp": [],  # 30-day daily soil temps for GDD
         "forecast_temps_max": [], "forecast_temps_min": [],
         "forecast_soil_temp": [], "forecast_soil_moisture": [],
         "forecast_snow_depth": [],
@@ -74,6 +76,12 @@ def get_weather(lat: float, lon: float) -> dict[str, Any]:
         result["hist_temps_min"] = safe_list(d, "temperature_2m_min")
         result["hist_precip"] = safe_list(d, "precipitation_sum")
         result["hist_snowfall"] = safe_list(d, "snowfall_sum")
+
+    # Historical soil temp (hourly -> daily max) for GDD calculation
+    if hist and "hourly" in hist:
+        hist_soil = hist["hourly"].get("soil_temperature_0_to_7cm", [])
+        if hist_soil:
+            result["hist_soil_temp"] = hourly_to_daily_max(hist_soil)
 
     if forecast and "daily" in forecast:
         d = forecast["daily"]

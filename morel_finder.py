@@ -23,7 +23,7 @@ from config import (ALDER_CREEK, TAHOE_BASIN_CENTER, SEARCH_RADIUS_KM,
 from scoring import score_burn_site, score_burn_multiday
 from mapping import build_map, build_chart, print_report, rating
 from utils.weather import get_weather
-from utils.elevation import get_elevation_ft, get_slope_aspect
+from utils.elevation import get_elevation_ft, get_slope_aspect, get_best_aspect
 from utils.fires import get_recent_fires, get_tahoe_fuels_treatments
 from utils.pfirs import load_pfirs_cache, pfirs_to_fire_records, filter_radius as pfirs_filter
 
@@ -46,7 +46,7 @@ def score_burn(fire, mushroom_type="morel"):
         return None
     weather = get_weather(lat, lon)
     elev = get_elevation_ft(lat, lon)
-    terrain = get_slope_aspect(lat, lon)
+    terrain = get_best_aspect(lat, lon)
     name = fire.get("name", "?")
     zone = {"name": name, "lat": lat, "lon": lon, "elevation_ft": elev,
             "slope": terrain.get("slope"), "aspect": terrain.get("aspect")}

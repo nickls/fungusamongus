@@ -38,6 +38,8 @@ def extract_weather_details(weather: dict) -> dict:
         d["precip_30d_val"] = sum(hist_precip)
         d["precip_14d"] = f"{d['precip_14d_val']:.1f}in"
         d["precip_30d"] = f"{d['precip_30d_val']:.1f}in"
+        # Count of rain events >0.4in (10mm) in 30 days — literature says this matters
+        d["rain_events_30d"] = sum(1 for p in hist_precip if p > 0.4)
 
     snow_depth = weather.get("forecast_snow_depth", [])
     if snow_depth and len(snow_depth) >= 3:
@@ -131,6 +133,7 @@ def make_day_weather(weather: dict, day_offset: int) -> dict:
         "hist_temps_min": weather.get("hist_temps_min", []),
         "hist_precip": weather.get("hist_precip", []),
         "hist_snowfall": weather.get("hist_snowfall", []),
+        "hist_soil_temp": weather.get("hist_soil_temp", []),
         "forecast_temps_max": highs,
         "forecast_temps_min": lows,
         "forecast_soil_temp": soil_trend_window,  # full window for trend
@@ -204,45 +207,57 @@ def score_burn_site(fire: dict, weather: dict, elev: float | None,
     scores["soil_threshold"] = soil_score
 
     # ══════════════════════════════════════════════════════════════════
-    # B. WARMING TREND (25pts) — the timing trigger
+    # B. SOIL GDD (25pts) — cumulative growing degree days
+    # Literature: 365-580 GDD above 32F predicts morel onset
     # ══════════════════════════════════════════════════════════════════
-    max_pts = w.get("warming_trend", 25)
-    trend_score = 0
+    max_pts = w.get("soil_gdd", 25)
+    gdd_score = 0
 
+    # Build full soil temp timeline: 30-day history + 14-day forecast
+    hist_soil = weather.get("hist_soil_temp", [])
+    all_soil_temps = list(hist_soil) + list(soil_temps)
+
+    gdd_base = mt.get("gdd_base_temp", 32)
+    gdd_onset = mt.get("gdd_onset", 365)
+    gdd_peak = mt.get("gdd_peak", 580)
+
+    if all_soil_temps:
+        gdd = sum(max(t - gdd_base, 0) for t in all_soil_temps)
+        details["soil_gdd"] = f"{gdd:.0f} GDD"
+
+        if gdd >= gdd_peak:
+            gdd_score = max_pts                        # peak fruiting window
+        elif gdd >= gdd_onset:
+            frac = (gdd - gdd_onset) / (gdd_peak - gdd_onset)
+            gdd_score = round(max_pts * (0.7 + 0.3 * frac))  # 70-100% of max
+        elif gdd >= gdd_onset * 0.55:
+            frac = (gdd - gdd_onset * 0.55) / (gdd_onset * 0.45)
+            gdd_score = round(max_pts * 0.3 * frac)   # approaching
+        # else: too early, 0 pts
+    else:
+        details["soil_gdd"] = "no data"
+
+    # Also compute trend (F/day) as secondary detail for the popup
     if len(soil_temps) >= 6:
-        # Linear regression slope — robust to single-day spikes
         x = np.arange(len(soil_temps))
-        slope, intercept = np.polyfit(x, soil_temps, 1)
-        trend_per_day = slope  # degrees F per day
-        if trend_per_day > 1.0:
-            trend_score = max_pts
-            details["soil_trend"] = f"RAPID WARMING (+{trend_per_day:.1f}F/day)"
-        elif trend_per_day > 0.5:
-            trend_score = round(max_pts * 0.85)
+        slope, _ = np.polyfit(x, soil_temps, 1)
+        trend_per_day = slope
+        if trend_per_day > 0.5:
             details["soil_trend"] = f"WARMING (+{trend_per_day:.1f}F/day)"
-        elif trend_per_day > 0.2:
-            trend_score = round(max_pts * 0.55)
+        elif trend_per_day > 0.1:
             details["soil_trend"] = f"warming (+{trend_per_day:.1f}F/day)"
         elif trend_per_day > -0.2:
-            trend_score = round(max_pts * 0.2)
             details["soil_trend"] = f"stable ({trend_per_day:+.1f}F/day)"
         else:
-            trend_score = 0
             details["soil_trend"] = f"cooling ({trend_per_day:.1f}F/day)"
         details["soil_trend_per_day"] = round(trend_per_day, 2)
 
-    # Per-day soil temp deltas for sparkline chart
     if len(soil_temps) >= 2:
         deltas = [round(soil_temps[i] - soil_temps[i-1], 1) for i in range(1, len(soil_temps))]
-        details["soil_deltas"] = deltas  # list of daily changes in F
+        details["soil_deltas"] = deltas
         details["soil_temps_raw"] = [round(t, 1) for t in soil_temps]
 
-    if not soil_temps:
-        details["soil_trend"] = "insufficient data"
-        details["soil_trend_per_day"] = 0
-
-    # Apply soil gate to trend score
-    scores["warming_trend"] = round(trend_score)
+    scores["soil_gdd"] = round(gdd_score)
 
     # ══════════════════════════════════════════════════════════════════
     # C. RECENT MOISTURE (20pts) — rain/snowmelt in last 3-10 days
@@ -265,6 +280,15 @@ def score_burn_site(fire: dict, weather: dict, elev: float | None,
     avg_sm = wx.get("avg_sm")
     if avg_sm is not None and sm_range[0] <= avg_sm <= sm_range[1]:
         moisture_score += max_pts * sm_weight
+
+    # Rain event bonus — literature: events >10mm in prior 30 days matter
+    rain_events = wx.get("rain_events_30d", 0)
+    if rain_events >= 3:
+        moisture_score += max_pts * 0.15
+    elif rain_events >= 2:
+        moisture_score += max_pts * 0.10
+    if rain_events:
+        details["rain_events"] = f"{rain_events} events >0.4in/30d"
 
     scores["recent_moisture"] = min(round(moisture_score), max_pts)
 
@@ -336,18 +360,25 @@ def score_burn_site(fire: dict, weather: dict, elev: float | None,
     max_pts = w.get("sun_aspect", 10)
     aspect_score = 0
 
-    # Aspect (0-5pts)
+    # Aspect (0-5pts) — month-adjusted from config
     if terrain and terrain.get("aspect") is not None:
         aspect = terrain["aspect"]
         slope = terrain.get("slope", 0)
         details["slope"] = f"{slope:.0f}deg"
         details["aspect"] = f"{aspect:.0f}deg ({aspect_label(aspect)})"
+        if terrain.get("aspect_centroid") is not None:
+            details["aspect_centroid"] = f"{terrain['aspect_centroid']:.0f}deg"
+
+        month = datetime.now().month
+        month_weights = mt.get("aspect_month_weights", {})
+        asp = month_weights.get(month, mt.get("aspect_default", {"south": 3, "east_west": 1, "north": 0}))
 
         if 135 <= aspect <= 225:
-            aspect_score += 5   # south-facing = first to melt
+            aspect_score += asp["south"]
         elif 90 <= aspect <= 270:
-            aspect_score += 2   # east/west
-        # north = 0
+            aspect_score += asp["east_west"]
+        else:
+            aspect_score += asp.get("north", 0)
 
         if 5 <= slope <= 25:
             aspect_score += 2   # good drainage, walkable

@@ -7,7 +7,7 @@ To experiment with different scoring algorithms:
   3. Run: python morel_finder.py --config config_experimental.py
 """
 
-ALGO_VERSION = "0.5.0"
+ALGO_VERSION = "0.6.0"
 # 0.1.0 — Fixed zone scoring with fire proximity
 # 0.2.0 — Burn-location-based scoring, PFIRS integration
 # 0.3.0 — Moisture gate / soil temp trigger model, warming trend detection,
@@ -73,8 +73,8 @@ MOREL_PROFILE = {
     #   - Nebraskaland: no fruiting below ~50F soil; drought kills flush
     #   - Iowa DNR: south-facing slopes first
     "weights": {
-        "soil_threshold": 25,    # Hard gate: soil must be 48-55F
-        "warming_trend": 25,     # Rising temps over 2-3 weeks = timing trigger
+        "soil_threshold": 25,    # Hard gate: soil must be 45-58F (literature: 43F onset)
+        "soil_gdd": 25,          # Cumulative soil degree-days (365-580 GDD = onset)
         "recent_moisture": 20,   # Rain/snowmelt in last 3-10 days = drives yield
         "burn_quality": 15,      # Recency, type, size of the burn itself
         "sun_aspect": 10,        # Slope + aspect = local soil warming rate
@@ -82,10 +82,19 @@ MOREL_PROFILE = {
     },
 
     # ── Soil temperature thresholds ──
-    "soil_temp_ideal": (48, 58),   # sweet spot for fruiting
-    "soil_temp_ok": (45, 66),      # acceptable but not prime
-    "soil_temp_gate": 40,          # below this = hard block (score * 0.1)
-    "soil_temp_approaching": 45,   # below ideal but above gate (score * 0.4)
+    # Literature: fruiting begins above 43F (6.1C). Ideal 50-55F.
+    "soil_temp_ideal": (45, 58),   # lowered from 48 per research
+    "soil_temp_ok": (43, 66),      # 43F is the documented minimum
+    "soil_temp_gate": 38,          # hard block below this
+    "soil_temp_approaching": 43,   # documented onset temperature
+
+    # ── Soil GDD (Growing Degree Days) ──
+    # Literature: onset at 365-580 GDD above 0C (32F) over ~30 days
+    # We compute from 30-day air temp history (proxy) + 14-day forecast soil temps
+    "gdd_base_temp": 32,           # base temp in F (0C)
+    "gdd_onset": 365,              # GDD where fruiting begins
+    "gdd_peak": 580,               # GDD where fruiting is at peak
+    "gdd_max_window_days": 44,     # 30 days hist + 14 days forecast
 
     # ── Air temperature (proxy, low weight) ──
     "temp_ideal_high": (55, 75),
@@ -141,11 +150,14 @@ MOREL_PROFILE = {
     ],
 
     # ── Terrain sub-scoring ──
-    "aspect_scores": {
-        "south": 3,    # 135-225 deg
-        "east_west": 1,  # 90-270 deg
-        "north": 0,
+    # Month-adjusted aspect: south matters more early, north catches up late
+    "aspect_month_weights": {
+        4: {"south": 5, "east_west": 2, "north": 0},  # April
+        5: {"south": 4, "east_west": 3, "north": 1},  # May
+        6: {"south": 3, "east_west": 3, "north": 2},  # June
+        7: {"south": 2, "east_west": 3, "north": 3},  # July
     },
+    "aspect_default": {"south": 3, "east_west": 1, "north": 0},
     "slope_scores": {
         "moderate": 2,  # 5-25 deg
         "flat": 1,      # <5 deg
