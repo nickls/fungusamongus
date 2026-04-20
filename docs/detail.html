@@ -153,6 +153,21 @@ async function init() {
     html += `</div></div>`;
   }
 
+  // Date formatter (needed by phase forecast and charts below)
+  const dayNames = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
+  const monthNames = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+  function fmtDate(dateStr, i) {
+    if (!dateStr) return i === 0 ? "Today" : `+${i}`;
+    const dt = new Date(dateStr + "T12:00:00");
+    if (i === 0) return "Today";
+    return dayNames[dt.getDay()];
+  }
+  function fmtDateLong(dateStr) {
+    if (!dateStr) return "";
+    const dt = new Date(dateStr + "T12:00:00");
+    return `${dayNames[dt.getDay()]} ${monthNames[dt.getMonth()]} ${dt.getDate()}`;
+  }
+
   // 8-day phase forecast
   if (burn.phase_days && burn.phase_days.length > 0) {
     html += `<div class="chart-card" style="grid-column:1/-1;">`;
@@ -187,20 +202,7 @@ async function init() {
   }
   html += `</div></div>`;
 
-  // Date formatter: "Apr 20" or "Sun"
-  const dayNames = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
-  const monthNames = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
-  function fmtDate(dateStr, i) {
-    if (!dateStr) return i === 0 ? "Today" : `+${i}`;
-    const dt = new Date(dateStr + "T12:00:00");
-    if (i === 0) return "Today";
-    return dayNames[dt.getDay()];
-  }
-  function fmtDateLong(dateStr) {
-    if (!dateStr) return "";
-    const dt = new Date(dateStr + "T12:00:00");
-    return `${dayNames[dt.getDay()]} ${monthNames[dt.getMonth()]} ${dt.getDate()}`;
-  }
+  // (date formatters defined above)
 
   // 8-day charts
   html += `<div class="charts">`;

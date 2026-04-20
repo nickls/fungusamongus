@@ -198,7 +198,9 @@ function render() {
 
     // Apply filters
     if (day.total < totalMin) { hidden++; continue; }
-    if (day.total < 50) { hidden++; continue; }
+    // Hide TOO_EARLY sites — nothing happening there
+    const pd0 = (burn.phase_days || [])[selectedDay] || {};
+    if (pd0.phase === "TOO_EARLY") { hidden++; continue; }
 
     let filtered = false;
     for (const f of FACTORS) {
@@ -233,10 +235,17 @@ function render() {
 
     // Marker (only if layerMode includes markers)
     if (layerMode === "both" || layerMode === "markers") {
-      const color = day.total >= 80 ? "purple" : day.total >= 70 ? "green" : "orange";
+      // Color by phase (from phase_days for selected day)
+      const pd = (burn.phase_days || [])[selectedDay] || {};
+      const phase = pd.phase || "?";
+      const readiness = pd.readiness || 0;
+      const potential = burn.potential || 0;
+      const phaseColorMap = { EMERGING: "purple", GROWING: "green", WAITING: "orange", TOO_EARLY: "gray" };
+      const color = phaseColorMap[phase] || "gray";
+      const showDiamond = phase === "EMERGING" || phase === "GROWING";
 
-      if (day.total >= 70) {
-        const size = 22 + Math.floor(day.total / 10);
+      if (showDiamond) {
+        const size = 22 + Math.floor(readiness / 10);
         const icon = L.divIcon({
           className: "",
           html: `<div style="
@@ -248,7 +257,7 @@ function render() {
             box-shadow:0 0 4px rgba(0,0,0,0.5);
             display:flex;align-items:center;justify-content:center;
           "><span style="transform:rotate(-45deg);color:white;
-            font-weight:bold;font-size:10px;">${day.total}</span></div>`,
+            font-weight:bold;font-size:10px;">${readiness}</span></div>`,
           iconSize: [size, size],
           iconAnchor: [size / 2, size / 2],
         });
@@ -285,8 +294,15 @@ function render() {
   }
 
   // Stats
+  // Count phases for stats
+  let emerging = 0, growing = 0;
+  for (const burn of data.burns) {
+    const pd1 = (burn.phase_days || [])[selectedDay] || {};
+    if (pd1.phase === "EMERGING") emerging++;
+    else if (pd1.phase === "GROWING") growing++;
+  }
   document.getElementById("stats").innerHTML =
-    `<span>${shown}</span> shown, ${hidden} hidden, <span>${excellent}</span> excellent`;
+    `<span>${shown}</span> shown, ${hidden} hidden | <span style="color:purple">${emerging}</span> emerging, <span style="color:green">${growing}</span> growing`;
 }
 
 // ── Popup ──
