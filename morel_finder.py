@@ -95,12 +95,12 @@ def export_json(results, all_fires, run_date):
             "days": days,
         })
 
-    out_dir = Path("docs/data")
+    out_dir = Path("pages/data")
     out_dir.mkdir(parents=True, exist_ok=True)
     out_path = out_dir / "latest.json"
     out_path.write_text(json.dumps(data, indent=None, separators=(",", ":")))
     size_kb = out_path.stat().st_size / 1024
-    print(f"  docs/data/latest.json ({size_kb:.0f}KB, {len(data['burns'])} burns x {len(days)} days)")
+    print(f"  pages/data/latest.json ({size_kb:.0f}KB, {len(data['burns'])} burns x {len(days)} days)")
 
 
 def gather_fire_data(center, radius_km):
