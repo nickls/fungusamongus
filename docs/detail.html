@@ -319,20 +319,24 @@ async function init() {
   const snowPad = new Array(HIST_DAYS - 7).fill(null);
   const snowFull = [...snowPad, ...snowAll2, ...new Array(Math.max(0, totalDays - snowPad.length - snowAll2.length)).fill(null)];
 
-  // Soil warming rate (derivative) — 3-day smoothed F/day change
+  // Soil warming rate — 7-day rolling average change (F/day)
+  // Compares 7-day average now vs 7-day average one week ago
   let warmingRate = null;
-  if (soilAll.filter(v => v != null).length >= 6) {
+  if (soilAll.filter(v => v != null).length >= 14) {
     warmingRate = soilAll.map((v, i) => {
-      if (i < 2 || v == null) return null;
-      // Average of last 3 days' changes
-      let sum = 0, count = 0;
-      for (let j = Math.max(0, i - 2); j <= i; j++) {
-        if (soilAll[j] != null && soilAll[j-1] != null) {
-          sum += soilAll[j] - soilAll[j-1];
-          count++;
-        }
+      if (i < 7) return null;
+      // Average of days i-6 to i vs days i-13 to i-7
+      let recent = [], prior = [];
+      for (let j = i - 6; j <= i; j++) {
+        if (soilAll[j] != null) recent.push(soilAll[j]);
       }
-      return count > 0 ? +(sum / count).toFixed(1) : null;
+      for (let j = i - 13; j <= i - 7; j++) {
+        if (j >= 0 && soilAll[j] != null) prior.push(soilAll[j]);
+      }
+      if (recent.length < 3 || prior.length < 3) return null;
+      const recentAvg = recent.reduce((a,b) => a+b, 0) / recent.length;
+      const priorAvg = prior.reduce((a,b) => a+b, 0) / prior.length;
+      return +((recentAvg - priorAvg) / 7).toFixed(2);
     });
   }
 
@@ -427,7 +431,7 @@ async function init() {
           y: {
             ticks: { color: "#e94560", font: { size: 9 } },
             grid: { color: "#0f3460" },
-            suggestedMin: -5, suggestedMax: 5,
+            min: -3, max: 3,
           },
         },
       },
