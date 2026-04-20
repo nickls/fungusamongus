@@ -47,8 +47,8 @@ async function init() {
     attribution: "Esri",
     maxZoom: 18,
   });
-  carto.addTo(map);
-  L.control.layers({"CARTO": carto, "Esri Topo": esriTopo}, null, {position: "topright"}).addTo(map);
+  esriTopo.addTo(map);
+  L.control.layers({"Esri Topo": esriTopo, "CARTO": carto}, null, {position: "topright"}).addTo(map);
 
   markersLayer = L.layerGroup().addTo(map);
 
