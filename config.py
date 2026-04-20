@@ -56,48 +56,52 @@ MOREL_PROFILE = {
     "notes": "Fire-associated. Best 3-12mo post-burn, moderate severity, "
              "after snowmelt when soil warms to 50F+.",
 
-    # Factor weights (must sum to 100; terrain is bonus on top)
-    # Moisture is the gate (non-negotiable). Soil temp is the trigger.
-    # Burn quality is the opportunity. Elevation is seasonal timing.
+    # Factor weights (must sum to 100)
+    #
+    # Temperature system (threshold + rise) dominates TIMING (~50%)
+    # Moisture system controls SUCCESS (~30%)
+    # Burn quality is the OPPORTUNITY (~15%)
+    # Sun aspect / terrain is local optimization (~5%)
+    #
+    # Sources:
+    #   - NAMA: warming trends more predictive than rainfall for emergence
+    #   - Nebraskaland: no fruiting below ~50F soil; drought kills flush
+    #   - Iowa DNR: south-facing slopes first
     "weights": {
-        "moisture": 30,
-        "temperature": 25,
-        "burn_quality": 35,
-        "elevation": 10,
+        "soil_threshold": 25,    # Hard gate: soil must be 48-55F
+        "warming_trend": 25,     # Rising temps over 2-3 weeks = timing trigger
+        "recent_moisture": 20,   # Rain/snowmelt in last 3-10 days = drives yield
+        "burn_quality": 15,      # Recency, type, size of the burn itself
+        "sun_aspect": 10,        # Slope + aspect = local soil warming rate
+        "air_temp": 5,           # Proxy only — indirect via soil temps
     },
-    "terrain_bonus_max": 5,  # on top of 100
 
-    # ── Temperature sub-scoring ──
-    # Each tuple is (low, high) for the ideal range
-    "temp_ideal_high": (55, 75),   # daily high F
-    "temp_ok_high": (45, 85),      # acceptable but not ideal
-    "temp_ideal_low": (30, 50),    # daily low F
-    "soil_temp_ideal": (45, 60),   # soil temp F
-    # Sub-weight distribution within temperature (must sum to 1.0):
-    # Warming trend is the actual trigger — more predictive than any single reading.
-    # "soil" here covers threshold only; trend is scored separately at "soil_trend".
-    "temp_sub_weights": {
-        "soil_trend": 0.35,  # rising soil temps = THE trigger
-        "high": 0.30,       # daily high = drives soil warming
-        "low": 0.20,        # daily low = freeze risk
-        "soil": 0.15,       # soil threshold (is it 45-60F?)
-    },
+    # ── Soil temperature thresholds ──
+    "soil_temp_ideal": (48, 58),   # sweet spot for fruiting
+    "soil_temp_ok": (45, 62),      # acceptable but not prime
+    "soil_temp_gate": 40,          # below this = hard block (score * 0.1)
+    "soil_temp_approaching": 45,   # below ideal but above gate (score * 0.4)
+
+    # ── Air temperature (proxy, low weight) ──
+    "temp_ideal_high": (55, 75),
+    "temp_ok_high": (45, 85),
+    "temp_ideal_low": (30, 50),
 
     # ── Moisture sub-scoring ──
-    "precip_thresholds": [       # (min_inches_14d, fraction_of_weight)
-        (1.5, 0.40),
-        (0.5, 0.25),
+    "precip_thresholds": [       # (min_inches in last 10 days, fraction_of_weight)
+        (1.5, 0.50),
+        (0.5, 0.30),
         (0.1, 0.10),
     ],
-    "melt_weight": 0.50,         # snowmelt contributes 50% of moisture score
-    "soil_moisture_ideal": (0.20, 0.45),  # m3/m3
+    "melt_weight": 0.40,         # snowmelt status
+    "soil_moisture_ideal": (0.20, 0.45),
     "soil_moisture_weight": 0.10,
 
-    # ── Elevation ──
-    "elev_base": 4500,           # ideal band bottom in April
-    "elev_range": 2500,          # band width
-    "elev_shift_per_month": 300, # ft/month upslope from April
-    "elev_scoring": {            # (distance_from_band, fraction)
+    # ── Elevation (folded into sun_aspect for seasonal timing) ──
+    "elev_base": 4500,
+    "elev_range": 2500,
+    "elev_shift_per_month": 300,
+    "elev_scoring": {
         "in_band": 1.0,
         "within_500ft": 0.6,
         "within_1000ft": 0.25,

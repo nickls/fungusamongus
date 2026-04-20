@@ -93,86 +93,89 @@ def score_burn_site(fire: dict, weather: dict, elev: float | None,
     wx = extract_weather_details(weather)
     details.update({k: v for k, v in wx.items() if isinstance(v, str)})
 
-    # ── Temperature ──
-    max_pts = w.get("temperature", 25)
-    sub = mt.get("temp_sub_weights", {"soil_trend": 0.35, "high": 0.30, "low": 0.20, "soil": 0.15})
-    temp_score = 0
-    avg_high = wx.get("avg_high")
-    avg_low = wx.get("avg_low")
     avg_soil = wx.get("avg_soil")
-
-    # Soil temp is a GATE — if soil is too cold, entire temp score is capped
-    soil_gate_open = True
-    soil_gate_factor = 1.0
-    if avg_soil is not None:
-        lo, hi = mt["soil_temp_ideal"]
-        if avg_soil < lo - 7:
-            # Way too cold — soil not even close. Cap total temp score hard.
-            soil_gate_open = False
-            soil_gate_factor = 0.1
-            details["soil_gate"] = f"BLOCKED ({avg_soil:.0f}F < {lo}F)"
-        elif avg_soil < lo:
-            # Below threshold but approaching — partial credit
-            soil_gate_factor = 0.4
-            details["soil_gate"] = f"approaching ({avg_soil:.0f}F)"
-        else:
-            # Threshold met
-            temp_score += max_pts * sub.get("soil", 0.15)
-            if avg_soil > hi:
-                temp_score += max_pts * sub.get("soil", 0.15) * 0.3  # past peak but ok
-
-    if avg_high is not None:
-        lo, hi = mt["temp_ideal_high"]
-        ok_lo, ok_hi = mt["temp_ok_high"]
-        if lo <= avg_high <= hi:
-            temp_score += max_pts * sub.get("high", 0.30)
-        elif ok_lo <= avg_high <= ok_hi:
-            temp_score += max_pts * sub.get("high", 0.30) * 0.5
-
-    if avg_low is not None:
-        lo, hi = mt["temp_ideal_low"]
-        if lo <= avg_low <= hi:
-            temp_score += max_pts * sub.get("low", 0.20)
-        elif lo - 5 <= avg_low <= hi + 5:
-            temp_score += max_pts * sub.get("low", 0.20) * 0.5
-
-    # Warming trend — the actual trigger, biggest piece of temp score
     soil_temps = weather.get("forecast_soil_temp", [])
-    trend_sub = sub.get("soil_trend", 0.35)
+
+    # ══════════════════════════════════════════════════════════════════
+    # A. SOIL TEMPERATURE THRESHOLD (25pts) — hard gate
+    # ══════════════════════════════════════════════════════════════════
+    max_pts = w.get("soil_threshold", 25)
+    soil_score = 0
+    soil_gate_factor = 1.0  # applied to ALL other scores
+
+    ideal = mt.get("soil_temp_ideal", (48, 58))
+    ok = mt.get("soil_temp_ok", (45, 62))
+    gate_temp = mt.get("soil_temp_gate", 40)
+    approaching_temp = mt.get("soil_temp_approaching", 45)
+
+    if avg_soil is not None:
+        if ideal[0] <= avg_soil <= ideal[1]:
+            soil_score = max_pts                  # full marks
+        elif ok[0] <= avg_soil <= ok[1]:
+            soil_score = round(max_pts * 0.6)     # acceptable
+        elif avg_soil >= approaching_temp:
+            soil_score = round(max_pts * 0.3)     # approaching
+            soil_gate_factor = 0.7
+            details["soil_gate"] = f"approaching ({avg_soil:.0f}F)"
+        elif avg_soil >= gate_temp:
+            soil_score = round(max_pts * 0.1)     # cold
+            soil_gate_factor = 0.4
+            details["soil_gate"] = f"cold ({avg_soil:.0f}F)"
+        else:
+            soil_score = 0                        # blocked
+            soil_gate_factor = 0.1
+            details["soil_gate"] = f"BLOCKED ({avg_soil:.0f}F)"
+    else:
+        soil_score = round(max_pts * 0.3)  # no data, assume mediocre
+        details["soil_gate"] = "no soil data"
+
+    scores["soil_threshold"] = soil_score
+
+    # ══════════════════════════════════════════════════════════════════
+    # B. WARMING TREND (25pts) — the timing trigger
+    # ══════════════════════════════════════════════════════════════════
+    max_pts = w.get("warming_trend", 25)
+    trend_score = 0
+
     if len(soil_temps) >= 6:
         first_half = np.mean(soil_temps[:len(soil_temps)//2])
         second_half = np.mean(soil_temps[len(soil_temps)//2:])
         trend = second_half - first_half
-        if trend > 3:
-            temp_score += max_pts * trend_sub
+        if trend > 5:
+            trend_score = max_pts                   # rapid warming
+            details["soil_trend"] = f"RAPID WARMING (+{trend:.0f}F)"
+        elif trend > 3:
+            trend_score = round(max_pts * 0.85)     # strong warming
             details["soil_trend"] = f"WARMING (+{trend:.0f}F)"
         elif trend > 1:
-            temp_score += max_pts * trend_sub * 0.65
+            trend_score = round(max_pts * 0.55)     # moderate warming
             details["soil_trend"] = f"warming (+{trend:.0f}F)"
         elif trend > -1:
-            temp_score += max_pts * trend_sub * 0.25
+            trend_score = round(max_pts * 0.2)      # stable
             details["soil_trend"] = "stable"
         else:
+            trend_score = 0                          # cooling
             details["soil_trend"] = f"cooling ({trend:.0f}F)"
-    elif avg_soil is not None:
+    else:
         details["soil_trend"] = "insufficient data"
 
-    # Apply soil gate — if soil is too cold, scale down entire temp score
-    temp_score = temp_score * soil_gate_factor
-    scores["temperature"] = min(round(temp_score), max_pts)
+    # Apply soil gate to trend score
+    scores["warming_trend"] = round(trend_score * soil_gate_factor)
 
-    # ── Moisture ──
-    max_pts = w.get("moisture", 25)
+    # ══════════════════════════════════════════════════════════════════
+    # C. RECENT MOISTURE (20pts) — rain/snowmelt in last 3-10 days
+    # ══════════════════════════════════════════════════════════════════
+    max_pts = w.get("recent_moisture", 20)
     moisture_score = 0
     precip_14d = wx.get("precip_14d_val", 0)
     melt = wx.get("melt_score", 0)
 
-    for threshold, frac in mt.get("precip_thresholds", [(1.5, 0.4), (0.5, 0.25), (0.1, 0.1)]):
+    for threshold, frac in mt.get("precip_thresholds", [(1.5, 0.5), (0.5, 0.3), (0.1, 0.1)]):
         if precip_14d > threshold:
             moisture_score += max_pts * frac
             break
 
-    melt_weight = mt.get("melt_weight", 0.5)
+    melt_weight = mt.get("melt_weight", 0.4)
     moisture_score += max_pts * melt_weight * max(melt, 0)
 
     sm_range = mt.get("soil_moisture_ideal", (0.2, 0.45))
@@ -181,67 +184,20 @@ def score_burn_site(fire: dict, weather: dict, elev: float | None,
     if avg_sm is not None and sm_range[0] <= avg_sm <= sm_range[1]:
         moisture_score += max_pts * sm_weight
 
-    scores["moisture"] = min(round(moisture_score), max_pts)
+    scores["recent_moisture"] = min(round(moisture_score), max_pts)
 
-    # ── Elevation ──
-    max_pts = w.get("elevation", 15)
-    elev_score = 0
-    if elev is not None:
-        month = datetime.now().month
-        base = mt.get("elev_base", 4500)
-        rng = mt.get("elev_range", 2500)
-        shift = mt.get("elev_shift_per_month", 300)
-        ideal_low = base + (month - 4) * shift
-        ideal_high = ideal_low + rng
-
-        es = mt.get("elev_scoring", {"in_band": 1.0, "within_500ft": 0.6, "within_1000ft": 0.25})
-        if ideal_low <= elev <= ideal_high:
-            elev_score = round(max_pts * es["in_band"])
-        elif ideal_low - 500 <= elev <= ideal_high + 500:
-            elev_score = round(max_pts * es["within_500ft"])
-        elif ideal_low - 1000 <= elev <= ideal_high + 1000:
-            elev_score = round(max_pts * es["within_1000ft"])
-
-        details["elevation"] = f"{elev:.0f}ft"
-        details["ideal_band"] = f"{ideal_low:.0f}-{ideal_high:.0f}ft"
-    scores["elevation"] = elev_score
-
-    # ── Terrain bonus ──
-    terrain_max = mt.get("terrain_bonus_max", 5)
-    terrain_bonus = 0
-    if terrain and terrain.get("slope") is not None:
-        slope = terrain["slope"]
-        aspect = terrain["aspect"]
-        details["slope"] = f"{slope:.0f}deg"
-        details["aspect"] = f"{aspect:.0f}deg ({aspect_label(aspect)})"
-
-        asp = mt.get("aspect_scores", {"south": 3, "east_west": 1, "north": 0})
-        if 135 <= aspect <= 225:
-            terrain_bonus += asp["south"]
-        elif 90 <= aspect <= 270:
-            terrain_bonus += asp["east_west"]
-
-        sl = mt.get("slope_scores", {"moderate": 2, "flat": 1, "steep": 0})
-        if 5 <= slope <= 25:
-            terrain_bonus += sl["moderate"]
-        elif slope < 5:
-            terrain_bonus += sl["flat"]
-
-    scores["terrain"] = min(terrain_bonus, terrain_max)
-
-    # ── Burn Quality / Forest Maturity ──
-    burn_key = "burn_quality" if mt.get("needs_fire") else "forest_maturity"
-    max_pts = w.get(burn_key, 30)
+    # ══════════════════════════════════════════════════════════════════
+    # D. BURN QUALITY (15pts) — recency, type, size
+    # ══════════════════════════════════════════════════════════════════
+    max_pts = w.get("burn_quality", 15)
     burn_score = 0
 
     if mt.get("needs_fire"):
-        # Recency
         fire_date = fire.get("date")
-        recency_curve = mt.get("recency_curve", [(8, 0.5), (14, 0.4), (20, 0.2), (30, 0.1)])
+        recency_curve = mt.get("recency_curve", [(2, 0.3), (8, 0.5), (14, 0.4), (20, 0.2), (30, 0.1)])
         if fire_date:
             try:
-                fire_dt = datetime.strptime(fire_date, "%Y-%m-%d")
-                months_ago = (datetime.now() - fire_dt).days / 30
+                months_ago = (datetime.now() - datetime.strptime(fire_date, "%Y-%m-%d")).days / 30
                 for max_months, frac in recency_curve:
                     if months_ago <= max_months:
                         burn_score += max_pts * frac
@@ -257,7 +213,6 @@ def score_burn_site(fire: dict, weather: dict, elev: float | None,
             except (ValueError, TypeError):
                 pass
 
-        # Burn type
         burn_type_str = (fire.get("pfirs_burn_type", "") or "").lower()
         type_scores = mt.get("burn_type_scores", {})
         matched = False
@@ -272,7 +227,6 @@ def score_burn_site(fire: dict, weather: dict, elev: float | None,
             else:
                 burn_score += max_pts * type_scores.get("wildfire", 0.10)
 
-        # Acreage
         acres = fire.get("acres", 0)
         for min_acres, frac in mt.get("acreage_curve", [(20, 0.15), (5, 0.1), (0, 0.05)]):
             if acres >= min_acres:
@@ -281,29 +235,83 @@ def score_burn_site(fire: dict, weather: dict, elev: float | None,
 
         details["burn_type"] = fire.get("pfirs_burn_type") or ("RX" if fire.get("is_rx") else "wildfire")
         details["burn_acres"] = f"{acres:.1f}ac"
-    else:
-        # Non-fire mushrooms: penalize recent burns
-        fire_date = fire.get("date")
-        if fire_date:
-            try:
-                years_ago = (datetime.now() - datetime.strptime(fire_date, "%Y-%m-%d")).days / 365
-                if years_ago < 3:
-                    burn_score = 0
-                    details["forest_note"] = "AVOID: recent burn"
-                elif years_ago < 10:
-                    burn_score = round(max_pts * 0.3)
-                    details["forest_note"] = "recovering"
-                else:
-                    burn_score = round(max_pts * 0.7)
-                    details["forest_note"] = "mature regrowth"
-            except ValueError:
-                burn_score = round(max_pts * 0.2)
-        else:
-            burn_score = round(max_pts * 0.2)
 
-    scores[burn_key] = min(round(burn_score), max_pts)
+    scores["burn_quality"] = min(round(burn_score), max_pts)
 
-    # ── Season gate ──
+    # ══════════════════════════════════════════════════════════════════
+    # E. SUN / ASPECT / ELEVATION (10pts) — local soil warming rate
+    # ══════════════════════════════════════════════════════════════════
+    max_pts = w.get("sun_aspect", 10)
+    aspect_score = 0
+
+    # Aspect (0-5pts)
+    if terrain and terrain.get("aspect") is not None:
+        aspect = terrain["aspect"]
+        slope = terrain.get("slope", 0)
+        details["slope"] = f"{slope:.0f}deg"
+        details["aspect"] = f"{aspect:.0f}deg ({aspect_label(aspect)})"
+
+        if 135 <= aspect <= 225:
+            aspect_score += 5   # south-facing = first to melt
+        elif 90 <= aspect <= 270:
+            aspect_score += 2   # east/west
+        # north = 0
+
+        if 5 <= slope <= 25:
+            aspect_score += 2   # good drainage, walkable
+        elif slope < 5:
+            aspect_score += 1
+
+    # Elevation band (0-3pts within sun_aspect budget)
+    if elev is not None:
+        month = datetime.now().month
+        base = mt.get("elev_base", 4500)
+        rng = mt.get("elev_range", 2500)
+        shift = mt.get("elev_shift_per_month", 300)
+        ideal_low = base + (month - 4) * shift
+        ideal_high = ideal_low + rng
+        es = mt.get("elev_scoring", {"in_band": 1.0, "within_500ft": 0.6, "within_1000ft": 0.25})
+
+        if ideal_low <= elev <= ideal_high:
+            aspect_score += 3
+        elif ideal_low - 500 <= elev <= ideal_high + 500:
+            aspect_score += 2
+        elif ideal_low - 1000 <= elev <= ideal_high + 1000:
+            aspect_score += 1
+
+        details["elevation"] = f"{elev:.0f}ft"
+        details["ideal_band"] = f"{ideal_low:.0f}-{ideal_high:.0f}ft"
+
+    scores["sun_aspect"] = min(aspect_score, max_pts)
+
+    # ══════════════════════════════════════════════════════════════════
+    # F. AIR TEMPERATURE (5pts) — proxy only
+    # ══════════════════════════════════════════════════════════════════
+    max_pts = w.get("air_temp", 5)
+    air_score = 0
+    avg_high = wx.get("avg_high")
+    avg_low = wx.get("avg_low")
+
+    if avg_high is not None:
+        lo, hi = mt.get("temp_ideal_high", (55, 75))
+        ok_lo, ok_hi = mt.get("temp_ok_high", (45, 85))
+        if lo <= avg_high <= hi:
+            air_score += 3
+        elif ok_lo <= avg_high <= ok_hi:
+            air_score += 1
+
+    if avg_low is not None:
+        lo, hi = mt.get("temp_ideal_low", (30, 50))
+        if lo <= avg_low <= hi:
+            air_score += 2
+        elif lo - 5 <= avg_low <= hi + 5:
+            air_score += 1
+
+    scores["air_temp"] = min(air_score, max_pts)
+
+    # ══════════════════════════════════════════════════════════════════
+    # Season gate
+    # ══════════════════════════════════════════════════════════════════
     month = datetime.now().month
     lo, hi = mt.get("season_months", (4, 7))
     in_season = lo <= month <= hi
