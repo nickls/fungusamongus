@@ -10,7 +10,7 @@ const FACTORS = [
   { key: "recent_moisture", label: "Moisture", max: 20, default: 5, color: "#2980b9", tip: "Rain or snowmelt in last 3-10 days. Drives fruiting yield." },
   { key: "burn_quality", label: "Burn Quality", max: 15, default: 5, color: "#f39c12", tip: "Burn recency (3-8mo ideal), type (underburn > pile), acreage." },
   { key: "sun_aspect", label: "Sun/Aspect", max: 10, default: 4, color: "#27ae60", tip: "South-facing slopes melt first. Includes slope angle + elevation band." },
-  { key: "air_temp", label: "Air Temp", max: 5, default: 3, color: "#7f8c8d", tip: "Daily highs/lows. Indirect proxy — soil temp matters more." },
+  { key: "air_temp", label: "Air Temp", max: 5, default: 2, color: "#7f8c8d", tip: "Daily highs/lows. Indirect proxy — soil temp matters more." },
 ];
 
 let map, markersLayer, heatLayer;
@@ -354,6 +354,25 @@ function makePopup(burn, day) {
 
   const warming = burn.days.map(d => d.warming_trend || 0);
   html += miniChart(warming, "Warming", "", "#e67e22", selectedDay, false);
+
+  // Soil temp daily deltas — shows rate of change over 14 days
+  const deltas = day.soil_deltas;
+  if (deltas && deltas.length > 0) {
+    html += `<div style="display:flex;align-items:center;gap:6px;margin:4px 0;">`;
+    html += `<div style="font-size:9px;color:#999;width:50px;flex-shrink:0;text-align:right;">Soil &Delta;/day</div>`;
+    html += `<div style="display:flex;gap:1px;align-items:center;height:24px;flex:1;">`;
+    const maxDelta = Math.max(...deltas.map(d => Math.abs(d)), 1);
+    for (let i = 0; i < deltas.length; i++) {
+      const d = deltas[i];
+      const pct = Math.max(Math.abs(d) / maxDelta * 100, 4);
+      const color = d > 0 ? "#e67e22" : d < 0 ? "#3498db" : "#666";
+      const up = d >= 0;
+      html += `<div style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:${up ? 'flex-end' : 'flex-start'};height:100%;" title="Day ${i+1}: ${d>0?'+':''}${d}F">`;
+      html += `<div style="width:100%;height:${pct/2}%;background:${color};border-radius:2px;min-height:1px;"></div>`;
+      html += `</div>`;
+    }
+    html += `</div></div>`;
+  }
 
   // Key details — compact
   html += `<div style="margin-top:8px;font-size:11px;color:#888;line-height:1.6;">`;

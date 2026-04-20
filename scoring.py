@@ -98,11 +98,13 @@ def make_day_weather(weather: dict, day_offset: int) -> dict:
         e = min(len(arr), end)
         return [x for x in arr[s:e] if x is not None]
 
-    # For soil temps: use the full 14-day window for trend detection.
-    # Research says morels respond to warming over 20-30 days.
-    # A short window exaggerates daily noise into false trends.
+    # For soil temps: use all data UP TO the target day.
+    # For day 0 this is all 14 days. For day 5 it includes 12 days (past 7 + forecast 0-5).
+    # This means future days see the cooling/warming trend that includes forecast data,
+    # so a cold snap in the forecast actually registers as cooling.
     soil_all = weather.get("forecast_soil_temp", [])
-    soil_window = safe_slice(soil_all, 0, min(target_idx + 1, len(soil_all)))
+    soil_end = min(target_idx + 1, len(soil_all))
+    soil_window = [x for x in soil_all[:soil_end] if x is not None]
 
     # For snow depth: same window
     snow_all = weather.get("forecast_snow_depth", [])
@@ -213,26 +215,36 @@ def score_burn_site(fire: dict, weather: dict, elev: float | None,
     trend_score = 0
 
     if len(soil_temps) >= 6:
-        first_half = np.mean(soil_temps[:len(soil_temps)//2])
-        second_half = np.mean(soil_temps[len(soil_temps)//2:])
-        trend = second_half - first_half
-        if trend > 5:
-            trend_score = max_pts                   # rapid warming
-            details["soil_trend"] = f"RAPID WARMING (+{trend:.0f}F)"
-        elif trend > 3:
-            trend_score = round(max_pts * 0.85)     # strong warming
-            details["soil_trend"] = f"WARMING (+{trend:.0f}F)"
-        elif trend > 1:
-            trend_score = round(max_pts * 0.55)     # moderate warming
-            details["soil_trend"] = f"warming (+{trend:.0f}F)"
-        elif trend > -1:
-            trend_score = round(max_pts * 0.2)      # stable
-            details["soil_trend"] = "stable"
+        # Linear regression slope — robust to single-day spikes
+        x = np.arange(len(soil_temps))
+        slope, intercept = np.polyfit(x, soil_temps, 1)
+        trend_per_day = slope  # degrees F per day
+        if trend_per_day > 1.0:
+            trend_score = max_pts
+            details["soil_trend"] = f"RAPID WARMING (+{trend_per_day:.1f}F/day)"
+        elif trend_per_day > 0.5:
+            trend_score = round(max_pts * 0.85)
+            details["soil_trend"] = f"WARMING (+{trend_per_day:.1f}F/day)"
+        elif trend_per_day > 0.2:
+            trend_score = round(max_pts * 0.55)
+            details["soil_trend"] = f"warming (+{trend_per_day:.1f}F/day)"
+        elif trend_per_day > -0.2:
+            trend_score = round(max_pts * 0.2)
+            details["soil_trend"] = f"stable ({trend_per_day:+.1f}F/day)"
         else:
-            trend_score = 0                          # cooling
-            details["soil_trend"] = f"cooling ({trend:.0f}F)"
-    else:
+            trend_score = 0
+            details["soil_trend"] = f"cooling ({trend_per_day:.1f}F/day)"
+        details["soil_trend_per_day"] = round(trend_per_day, 2)
+
+    # Per-day soil temp deltas for sparkline chart
+    if len(soil_temps) >= 2:
+        deltas = [round(soil_temps[i] - soil_temps[i-1], 1) for i in range(1, len(soil_temps))]
+        details["soil_deltas"] = deltas  # list of daily changes in F
+        details["soil_temps_raw"] = [round(t, 1) for t in soil_temps]
+
+    if not soil_temps:
         details["soil_trend"] = "insufficient data"
+        details["soil_trend_per_day"] = 0
 
     # Apply soil gate to trend score
     scores["warming_trend"] = round(trend_score * soil_gate_factor)

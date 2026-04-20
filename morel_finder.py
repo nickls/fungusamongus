@@ -80,7 +80,7 @@ def export_json(results, all_fires, run_date):
                 "total": ds["total"],
                 **ds["scores"],
                 # Include key weather details for popup
-                **{k: v for k, v in ds.get("details", {}).items() if isinstance(v, str)},
+                **{k: v for k, v in ds.get("details", {}).items() if isinstance(v, (str, int, float))},
             })
         data["burns"].append({
             "name": z["name"],
