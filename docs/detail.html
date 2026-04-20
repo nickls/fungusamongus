@@ -318,15 +318,21 @@ async function init() {
   const snowPad = new Array(HIST_DAYS - 7).fill(null);
   const snowFull = [...snowPad, ...snowAll2, ...new Array(Math.max(0, totalDays - snowPad.length - snowAll2.length)).fill(null)];
 
-  // Soil trend line
-  let trendData = null;
-  const soilValid = soilAll.map((v, i) => v != null ? [i, v] : null).filter(Boolean);
-  if (soilValid.length >= 6) {
-    let sx=0,sy=0,sxy=0,sxx=0,n=soilValid.length;
-    for (const [xi,yi] of soilValid) { sx+=xi; sy+=yi; sxy+=xi*yi; sxx+=xi*xi; }
-    const slope = (n*sxy - sx*sy) / (n*sxx - sx*sx);
-    const intercept = (sy - slope*sx) / n;
-    trendData = soilAll.map((_,i) => +(intercept + slope*i).toFixed(1));
+  // Soil warming rate (derivative) — 3-day smoothed F/day change
+  let warmingRate = null;
+  if (soilAll.filter(v => v != null).length >= 6) {
+    warmingRate = soilAll.map((v, i) => {
+      if (i < 2 || v == null) return null;
+      // Average of last 3 days' changes
+      let sum = 0, count = 0;
+      for (let j = Math.max(0, i - 2); j <= i; j++) {
+        if (soilAll[j] != null && soilAll[j-1] != null) {
+          sum += soilAll[j] - soilAll[j-1];
+          count++;
+        }
+      }
+      return count > 0 ? +(sum / count).toFixed(1) : null;
+    });
   }
 
   const wxCtx = document.getElementById("weatherChart");
@@ -344,10 +350,11 @@ async function init() {
       borderColor: "#9b59b6", borderWidth: 1.5, pointRadius: 0, tension: 0.3,
       fill: false, borderDash: [4, 2], yAxisID: "yTemp",
     });
-    if (trendData) datasets.push({
-      type: "line", label: "Soil Trend", data: trendData,
-      borderColor: "#e94560", borderWidth: 1.5, pointRadius: 0,
-      borderDash: [8, 4], fill: false, yAxisID: "yTemp",
+    if (warmingRate) datasets.push({
+      type: "line", label: "Warming Rate (F/day)", data: warmingRate,
+      borderColor: "#e94560", borderWidth: 1.5, pointRadius: 0, tension: 0.4,
+      fill: { target: "origin", above: "rgba(233,69,96,0.08)", below: "rgba(52,152,219,0.08)" },
+      yAxisID: "yRate",
     });
 
     // Bars on right y-axis (moisture)
@@ -384,6 +391,13 @@ async function init() {
             title: { display: true, text: "Precip / Snow (in)", color: "#5bc0de" },
             ticks: { color: "#888" }, grid: { drawOnChartArea: false },
             min: 0,
+          },
+          yRate: {
+            type: "linear", position: "right",
+            title: { display: true, text: "F/day", color: "#e94560" },
+            ticks: { color: "#e94560", font: { size: 9 } },
+            grid: { drawOnChartArea: false },
+            display: false, // hidden axis — shares visual space with right side
           },
         },
       },
