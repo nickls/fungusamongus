@@ -243,7 +243,7 @@ function render() {
       const phaseColorMap = { EMERGING: "purple", GROWING: "green", WAITING: "orange", TOO_EARLY: "gray" };
       // Shape = potential (site quality), number inside = readiness
       const color = phase === "EMERGING" ? "purple" : phase === "GROWING" ? "green" : "orange";
-      const showDiamond = potential >= 50;  // only good burn sites get diamonds
+      const showDiamond = potential >= 75 && readiness >= 40;  // need good potential AND meaningful readiness
 
       if (showDiamond) {
         const size = 18 + Math.floor(potential / 10);  // bigger = higher potential
