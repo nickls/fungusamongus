@@ -6,13 +6,14 @@ See also: [Predictive Modeling Research](reference/predictive-modeling-for-burn-
 
 ## Version History
 
-| Version | Date | Key Changes |
-|---------|------|-------------|
-| 0.1.0 | 2026-04-19 | Fixed zone scoring with fire proximity |
-| 0.2.0 | 2026-04-19 | Burn-location-based scoring, PFIRS integration |
-| 0.3.0 | 2026-04-19 | Moisture gate / soil temp trigger model, warming trend detection, config-driven scoring, terrain (slope/aspect), refactored modules |
-| 0.4.0 | 2026-04-19 | Soil temp as hard gate (not just weighted), warming trend biggest temp factor (35%), recency curve refined (0-2mo penalty), rating thresholds tightened (80+=excellent, <50 hidden) |
-| **0.5.0** | **2026-04-20** | **6-factor model (soil threshold, warming trend, moisture, burn quality, sun/aspect, air temp). Per-day scoring (days 0-7) with proper windowing. SPA frontend. Linear regression for trend. Soil gate applies to all factors. 59 unit tests.** |
+| Version | Date | Key Changes | Details |
+|---------|------|-------------|---------|
+| 0.1.0 | 2026-04-19 | Fixed zone scoring with fire proximity | |
+| 0.2.0 | 2026-04-19 | Burn-location-based scoring, PFIRS integration | |
+| 0.3.0 | 2026-04-19 | Moisture gate, warming trend, config-driven, terrain | |
+| 0.4.0 | 2026-04-19 | Soil temp hard gate, 4-factor model | [v0.4.0](reference/algo/v0.4.0.md) |
+| 0.5.0 | 2026-04-20 | 6-factor model, per-day scoring, SPA, 59 tests | [v0.5.0](reference/algo/v0.5.0.md) |
+| **0.6.0** | **2026-04-20** | **Soil GDD, historical soil temp, multi-point aspect, rain events** | **[v0.6.0](reference/algo/v0.6.0.md)** |
 
 ## The Biological Model
 
