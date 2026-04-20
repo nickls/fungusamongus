@@ -231,8 +231,9 @@ async function init() {
     else labels.push("");
   }
 
-  // Combined weather chart canvas
+  // Weather chart + warming rate chart
   html += `<div class="chart-card" style="grid-column:1/-1;"><canvas id="weatherChart"></canvas></div>`;
+  html += `<div class="chart-card" style="grid-column:1/-1;height:100px;"><canvas id="warmingChart"></canvas></div>`;
 
   // We'll initialize charts after innerHTML is set (below)
 
@@ -350,12 +351,7 @@ async function init() {
       borderColor: "#9b59b6", borderWidth: 1.5, pointRadius: 0, tension: 0.3,
       fill: false, borderDash: [4, 2], yAxisID: "yTemp",
     });
-    if (warmingRate) datasets.push({
-      type: "line", label: "Warming Rate (F/day)", data: warmingRate,
-      borderColor: "#e94560", borderWidth: 1.5, pointRadius: 0, tension: 0.4,
-      fill: { target: "origin", above: "rgba(233,69,96,0.08)", below: "rgba(52,152,219,0.08)" },
-      yAxisID: "yRate",
-    });
+    // warming rate is in its own chart below
 
     // Bars on right y-axis (moisture)
     if (precip.some(v=>v>0)) datasets.push({
@@ -392,12 +388,46 @@ async function init() {
             ticks: { color: "#888" }, grid: { drawOnChartArea: false },
             min: 0, max: Math.max(3, ...precipFull.filter(v=>v!=null), ...snowFull.filter(v=>v!=null)),
           },
-          yRate: {
-            type: "linear", position: "right",
-            title: { display: true, text: "F/day", color: "#e94560" },
+        },
+      },
+    });
+  }
+
+  // Warming rate chart (separate, compact)
+  const warmCtx = document.getElementById("warmingChart");
+  if (warmCtx && warmingRate && warmingRate.some(v => v != null)) {
+    new Chart(warmCtx, {
+      type: "line",
+      data: {
+        labels,
+        datasets: [{
+          label: "Warming Rate (F/day)",
+          data: warmingRate,
+          borderColor: "#e94560",
+          borderWidth: 2,
+          pointRadius: 0,
+          tension: 0.4,
+          fill: {
+            target: "origin",
+            above: "rgba(233,69,96,0.15)",
+            below: "rgba(52,152,219,0.15)",
+          },
+        }],
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        interaction: { mode: "index", intersect: false },
+        plugins: {
+          legend: { display: false },
+          title: { display: true, text: "Soil Warming Rate (F/day) — above 0 = warming", color: "#888", font: { size: 11 } },
+        },
+        scales: {
+          x: { ticks: { color: "#666", font: { size: 8 }, maxRotation: 0 }, grid: { color: "#0f3460" } },
+          y: {
             ticks: { color: "#e94560", font: { size: 9 } },
-            grid: { drawOnChartArea: false },
-            display: false, // hidden axis — shares visual space with right side
+            grid: { color: "#0f3460" },
+            suggestedMin: -5, suggestedMax: 5,
           },
         },
       },
