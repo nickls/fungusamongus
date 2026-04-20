@@ -359,32 +359,22 @@ function makePopup(burn, day, burnIdx) {
   if (pd.grow_days) html += `<span style="font-size:10px;color:#888;">${pd.grow_days} grow days</span>`;
   html += `</div>`;
 
-  // Score + factor breakdown as colored blocks
-  const ratingLabel = day.total >= 80 ? "EXCELLENT" : day.total >= 70 ? "GOOD" : day.total >= 50 ? "FAIR" : "POOR";
-  html += `<div style="display:flex;align-items:center;gap:10px;margin:4px 0 8px;">`;
-  html += `<span style="font-size:24px;font-weight:bold;color:${totalColor};cursor:default;" title="${ratingLabel} — ${day.total}/100 total score">${day.total}</span>`;
-  html += `<div style="display:flex;gap:2px;flex:1;height:16px;cursor:default;" title="Factor breakdown (hover each block)">`;
-  for (const f of FACTORS) {
-    const v = day[f.key] || 0;
-    const pct = (v / f.max) * 100;
-    const pctLabel = Math.round(pct);
-    html += `<div style="flex:${f.max};background:${f.color};opacity:${pct > 50 ? 0.9 : 0.3};height:100%;border-radius:2px;cursor:help;" title="${f.label}: ${v}/${f.max} (${pctLabel}%)"></div>`;
-  }
-  html += `</div></div>`;
-
-  // Factor table — compact 2-column with tooltips
-  html += `<table style="width:100%;font-size:11px;border-collapse:collapse;margin-bottom:8px;">`;
-  for (let i = 0; i < FACTORS.length; i += 2) {
-    html += `<tr>`;
-    for (let j = i; j < i + 2 && j < FACTORS.length; j++) {
-      const f = FACTORS[j];
-      const v = day[f.key] || 0;
-      html += `<td style="padding:2px 4px;color:#aaa;width:25%;cursor:help;" title="${f.tip}">${f.label}</td>`;
-      html += `<td style="padding:2px 4px;font-weight:bold;width:25%;color:${v >= f.max * 0.7 ? f.color : '#666'};cursor:help;" title="${f.tip}">${v}/${f.max}</td>`;
-    }
-    html += `</tr>`;
-  }
-  html += `</table>`;
+  // Phase-based summary (replaces old score display)
+  html += `<div style="display:flex;align-items:center;gap:12px;margin:6px 0;">`;
+  html += `<div style="text-align:center;min-width:60px;">`;
+  html += `<div style="font-size:11px;color:#888;">Potential</div>`;
+  html += `<div style="font-size:20px;font-weight:bold;color:#53a8b6;">${potential}</div>`;
+  html += `</div>`;
+  html += `<div style="text-align:center;min-width:60px;">`;
+  html += `<div style="font-size:11px;color:#888;">Readiness</div>`;
+  html += `<div style="font-size:20px;font-weight:bold;color:${phaseColor};">${readiness}</div>`;
+  html += `</div>`;
+  html += `<div style="font-size:10px;color:#888;line-height:1.4;">`;
+  html += `${pd.grow_days || 0} grow days<br>`;
+  html += `${pd.start_days || 0} start days<br>`;
+  if (pd.max_bad_streak > 0) html += `${pd.max_bad_streak}d bad streak`;
+  html += `</div>`;
+  html += `</div>`;
 
   // 8-day charts — score gets labels, others are compact
   const totals = burn.days.map(d => d.total);
