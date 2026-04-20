@@ -191,7 +191,8 @@ function render() {
   let shown = 0, hidden = 0, excellent = 0;
   const heatData = [];
 
-  for (const burn of data.burns) {
+  for (let burnIdx = 0; burnIdx < data.burns.length; burnIdx++) {
+    const burn = data.burns[burnIdx];
     const day = burn.days[selectedDay];
     if (!day) continue;
 
@@ -252,7 +253,7 @@ function render() {
           iconAnchor: [size / 2, size / 2],
         });
         L.marker([burn.lat, burn.lon], { icon })
-          .bindPopup(() => makePopup(burn, day), {maxWidth: 360})
+          .bindPopup(() => makePopup(burn, day, burnIdx), {maxWidth: 360})
           .addTo(markersLayer);
       } else {
         L.circleMarker([burn.lat, burn.lon], {
@@ -262,7 +263,7 @@ function render() {
           fillOpacity: 0.6,
           weight: 1,
         })
-          .bindPopup(() => makePopup(burn, day), {maxWidth: 360})
+          .bindPopup(() => makePopup(burn, day, burnIdx), {maxWidth: 360})
           .addTo(markersLayer);
       }
     }
@@ -316,12 +317,12 @@ function miniChart(values, label, unit, color, highlightIdx, showLabels) {
   return html;
 }
 
-function makePopup(burn, day) {
+function makePopup(burn, day, burnIdx) {
   const totalColor = day.total >= 80 ? "purple" : day.total >= 70 ? "green" : "orange";
 
-  // Header
+  // Header — name links to detail page
   let html = `<div class="burn-popup" style="min-width:280px;max-width:340px;">`;
-  html += `<h3 style="margin:0 0 4px;">${burn.name}</h3>`;
+  html += `<h3 style="margin:0 0 4px;"><a href="detail.html?i=${burnIdx}&day=${selectedDay}" style="color:inherit;text-decoration:underline;" target="_blank">${burn.name}</a></h3>`;
   html += `<div style="font-size:11px;color:#888;margin-bottom:6px;">`;
   html += `${(burn.acres||0).toFixed(0)}ac | ${burn.burn_type} | ${burn.elevation_ft?.toFixed(0)||"?"}ft`;
   if (burn.slope != null) html += ` | ${burn.slope.toFixed(0)}deg ${aspectDir(burn.aspect)}`;

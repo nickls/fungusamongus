@@ -1,0 +1,239 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Burn Detail — FungusAmong.us 5000</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background: #1a1a2e; color: #e0e0e0; padding: 20px; }
+    .container { max-width: 900px; margin: 0 auto; }
+    a { color: #53a8b6; }
+    h1 { color: #e94560; margin-bottom: 4px; }
+    .meta { font-size: 13px; color: #888; margin-bottom: 20px; }
+    .score-hero { display: flex; align-items: center; gap: 20px; margin: 20px 0; padding: 16px; background: #16213e; border-radius: 8px; }
+    .score-big { font-size: 48px; font-weight: bold; }
+    .score-label { font-size: 14px; color: #888; }
+    .factor-bars { flex: 1; }
+    .factor-row { display: flex; align-items: center; gap: 8px; margin: 4px 0; font-size: 12px; }
+    .factor-row .label { width: 100px; color: #aaa; text-align: right; }
+    .factor-row .bar { flex: 1; height: 14px; background: #0f3460; border-radius: 3px; overflow: hidden; }
+    .factor-row .bar-fill { height: 100%; border-radius: 3px; }
+    .factor-row .val { width: 50px; font-weight: bold; }
+
+    .charts { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin: 20px 0; }
+    .chart-card { background: #16213e; border-radius: 8px; padding: 16px; }
+    .chart-card h3 { font-size: 13px; color: #888; margin-bottom: 8px; }
+    .chart-bars { display: flex; align-items: flex-end; gap: 2px; height: 120px; }
+    .chart-bar { flex: 1; border-radius: 3px 3px 0 0; position: relative; min-width: 0; }
+    .chart-bar .bar-label { position: absolute; top: -16px; left: 50%; transform: translateX(-50%); font-size: 10px; color: #999; white-space: nowrap; }
+    .chart-bar .day-label { position: absolute; bottom: -16px; left: 50%; transform: translateX(-50%); font-size: 9px; color: #666; }
+    .chart-bar.selected { outline: 2px solid #e94560; }
+
+    .details-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin: 20px 0; }
+    .detail-item { background: #16213e; border-radius: 6px; padding: 10px 12px; }
+    .detail-item .label { font-size: 11px; color: #888; }
+    .detail-item .value { font-size: 14px; font-weight: bold; margin-top: 2px; }
+
+    .trend-box { background: #16213e; border-radius: 8px; padding: 16px; margin: 20px 0; }
+    .trend-box.warming { border-left: 4px solid #e67e22; }
+    .trend-box.cooling { border-left: 4px solid #3498db; }
+    .trend-box.stable { border-left: 4px solid #888; }
+
+    .back { display: inline-block; margin-bottom: 16px; font-size: 13px; }
+    .map-link { display: inline-block; padding: 8px 16px; background: #0f3460; border-radius: 6px; text-decoration: none; color: white; margin: 8px 0; }
+    .map-link:hover { background: #53a8b6; }
+
+    @media (max-width: 600px) {
+      .charts { grid-template-columns: 1fr; }
+      .details-grid { grid-template-columns: 1fr; }
+      .score-hero { flex-direction: column; }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <a href="index.html" class="back">&larr; Back to map</a>
+    <div id="content">Loading...</div>
+  </div>
+
+  <script>
+const FACTORS = [
+  { key: "soil_threshold", label: "Soil Temp", max: 25, color: "#c0392b" },
+  { key: "soil_gdd", label: "Soil GDD", max: 25, color: "#e67e22" },
+  { key: "recent_moisture", label: "Moisture", max: 20, color: "#2980b9" },
+  { key: "burn_quality", label: "Burn Quality", max: 15, color: "#f39c12" },
+  { key: "sun_aspect", label: "Sun/Aspect", max: 10, color: "#27ae60" },
+  { key: "air_temp", label: "Air Temp", max: 5, color: "#7f8c8d" },
+];
+
+async function init() {
+  const params = new URLSearchParams(window.location.search);
+  const idx = parseInt(params.get("i"));
+  const day = parseInt(params.get("day") || "0");
+
+  let data;
+  try {
+    const resp = await fetch("data/latest.json");
+    data = await resp.json();
+  } catch (e) {
+    document.getElementById("content").innerHTML = "<p>No data. Run morel_finder.py first.</p>";
+    return;
+  }
+
+  if (isNaN(idx) || idx < 0 || idx >= data.burns.length) {
+    document.getElementById("content").innerHTML = "<p>Burn not found.</p>";
+    return;
+  }
+
+  const burn = data.burns[idx];
+  const d = burn.days[day] || burn.days[0];
+  const total = d.total;
+  const ratingColor = total >= 80 ? "purple" : total >= 70 ? "green" : total >= 50 ? "orange" : "red";
+  const ratingLabel = total >= 80 ? "EXCELLENT" : total >= 70 ? "GOOD" : total >= 50 ? "FAIR" : "POOR";
+
+  let html = "";
+
+  // Header
+  html += `<h1>${burn.name}</h1>`;
+  html += `<div class="meta">`;
+  html += `${(burn.acres||0).toFixed(0)}ac | ${burn.burn_type} | ${burn.elevation_ft?.toFixed(0)||"?"}ft`;
+  html += ` | <a href="https://www.google.com/maps?q=${burn.lat},${burn.lon}" target="_blank">Google Maps</a>`;
+  html += ` | Algo ${data.algo_version} | Run ${data.run_date}`;
+  html += `</div>`;
+
+  // Score hero
+  html += `<div class="score-hero">`;
+  html += `<div><div class="score-big" style="color:${ratingColor}">${total}</div><div class="score-label">${ratingLabel} — Day ${day}</div></div>`;
+  html += `<div class="factor-bars">`;
+  for (const f of FACTORS) {
+    const v = d[f.key] || 0;
+    const pct = (v / f.max) * 100;
+    html += `<div class="factor-row">`;
+    html += `<div class="label">${f.label}</div>`;
+    html += `<div class="bar"><div class="bar-fill" style="width:${pct}%;background:${f.color}"></div></div>`;
+    html += `<div class="val" style="color:${v >= f.max * 0.7 ? f.color : '#666'}">${v}/${f.max}</div>`;
+    html += `</div>`;
+  }
+  html += `</div></div>`;
+
+  // 8-day charts
+  html += `<div class="charts">`;
+
+  // Score chart
+  html += chartCard("8-Day Score", burn.days.map(d => d.total), burn.days.map((d,i) => {
+    const c = d.total >= 80 ? "purple" : d.total >= 70 ? "green" : d.total >= 50 ? "orange" : "#666";
+    return { val: d.total, color: c, label: d.date?.slice(5) || `+${i}` };
+  }), day, 100);
+
+  // Soil temp
+  const soilTemps = burn.days.map(d => { const m = (d.soil_temp||"").match(/(\d+)/); return m ? parseInt(m[1]) : null; });
+  if (soilTemps.some(v => v)) {
+    html += chartCard("Soil Temperature (F)", soilTemps, soilTemps.map((v,i) => ({
+      val: v, color: "#c0392b", label: burn.days[i].date?.slice(5) || `+${i}`
+    })), day, 80);
+  }
+
+  // Moisture
+  html += chartCard("Moisture Score", burn.days.map(d => d.recent_moisture || 0), burn.days.map((d,i) => ({
+    val: d.recent_moisture || 0, color: "#2980b9", label: burn.days[i].date?.slice(5) || `+${i}`
+  })), day, 20);
+
+  // GDD
+  html += chartCard("Soil GDD Score", burn.days.map(d => d.soil_gdd || 0), burn.days.map((d,i) => ({
+    val: d.soil_gdd || 0, color: "#e67e22", label: burn.days[i].date?.slice(5) || `+${i}`
+  })), day, 25);
+
+  html += `</div>`;
+
+  // Soil deltas chart
+  const deltas = d.soil_deltas;
+  if (deltas && deltas.length > 0) {
+    html += `<div class="chart-card">`;
+    html += `<h3>Soil Temp Daily Change (F/day)</h3>`;
+    html += `<div style="display:flex;gap:2px;align-items:center;height:80px;">`;
+    const maxD = Math.max(...deltas.map(v => Math.abs(v)), 1);
+    for (let i = 0; i < deltas.length; i++) {
+      const v = deltas[i];
+      const pct = Math.abs(v) / maxD * 100;
+      const color = v > 0 ? "#e67e22" : v < 0 ? "#3498db" : "#666";
+      const up = v >= 0;
+      html += `<div style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;">`;
+      html += `<div style="font-size:9px;color:#888;margin-bottom:2px;">${v > 0 ? "+" : ""}${v}</div>`;
+      html += `<div style="width:100%;height:${Math.max(pct/2, 2)}px;background:${color};border-radius:2px;"></div>`;
+      html += `</div>`;
+    }
+    html += `</div></div>`;
+  }
+
+  // Trend box
+  const trend = d.soil_trend || "";
+  const trendPerDay = d.soil_trend_per_day;
+  if (trend) {
+    const cls = trend.includes("WARMING") || trend.includes("warming") ? "warming" : trend.includes("cooling") ? "cooling" : "stable";
+    html += `<div class="trend-box ${cls}">`;
+    html += `<div style="font-size:16px;font-weight:bold;margin-bottom:4px;">${trend}</div>`;
+    if (trendPerDay != null) {
+      const rateLabel = Math.abs(trendPerDay) > 0.5 ? "Strong" : Math.abs(trendPerDay) > 0.2 ? "Moderate" : "Slight";
+      html += `<div style="font-size:12px;color:#999;">${rateLabel} trend over the full soil temp history</div>`;
+    }
+    if (d.gdd_modifier) html += `<div style="font-size:11px;color:#e94560;margin-top:4px;">${d.gdd_modifier}</div>`;
+    if (d.freeze_damage) html += `<div style="font-size:11px;color:#3498db;margin-top:4px;">${d.freeze_damage}</div>`;
+    html += `</div>`;
+  }
+
+  // Details grid
+  html += `<div class="details-grid">`;
+  const detailKeys = [
+    ["soil_temp", "Soil Temp"], ["soil_gdd", "Soil GDD"],
+    ["snow_status", "Snow"], ["precip_14d", "Precip (14d)"],
+    ["rain_events", "Rain Events"], ["burn_age", "Burn Age"],
+    ["burn_type", "Burn Type"], ["burn_acres", "Burn Size"],
+    ["elevation", "Elevation"], ["ideal_band", "Ideal Band"],
+    ["aspect", "Aspect (best)"], ["slope", "Slope"],
+    ["aspect_centroid", "Aspect (centroid)"], ["in_season", "In Season"],
+  ];
+  for (const [key, label] of detailKeys) {
+    if (d[key] != null) {
+      html += `<div class="detail-item"><div class="label">${label}</div><div class="value">${d[key]}</div></div>`;
+    }
+  }
+  html += `</div>`;
+
+  // Day selector
+  html += `<div style="margin:20px 0;display:flex;gap:4px;">`;
+  for (let i = 0; i < burn.days.length; i++) {
+    const dd = burn.days[i];
+    const sel = i === day;
+    const c = dd.total >= 80 ? "purple" : dd.total >= 70 ? "green" : dd.total >= 50 ? "orange" : "#666";
+    html += `<a href="?i=${idx}&day=${i}" style="flex:1;padding:8px 4px;text-align:center;background:${sel ? c : '#16213e'};color:${sel ? 'white' : '#888'};border-radius:4px;text-decoration:none;font-size:12px;">`;
+    html += `${i === 0 ? "NOW" : "+" + i}<br>${dd.total}`;
+    html += `</a>`;
+  }
+  html += `</div>`;
+
+  document.getElementById("content").innerHTML = html;
+}
+
+function chartCard(title, values, bars, selectedDay, maxVal) {
+  const max = Math.max(maxVal, ...values.filter(v => v != null));
+  let html = `<div class="chart-card"><h3>${title}</h3><div class="chart-bars">`;
+  for (let i = 0; i < bars.length; i++) {
+    const b = bars[i];
+    const v = b.val;
+    if (v == null) { html += `<div style="flex:1"></div>`; continue; }
+    const pct = Math.max((v / max) * 100, 3);
+    const sel = i === selectedDay ? " selected" : "";
+    html += `<div class="chart-bar${sel}" style="height:${pct}%;background:${b.color};">`;
+    html += `<span class="bar-label">${typeof v === "number" ? (Number.isInteger(v) ? v : v.toFixed(0)) : v}</span>`;
+    html += `<span class="day-label">${b.label}</span>`;
+    html += `</div>`;
+  }
+  html += `</div></div>`;
+  return html;
+}
+
+document.addEventListener("DOMContentLoaded", init);
+  </script>
+</body>
+</html>
