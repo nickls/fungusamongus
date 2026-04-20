@@ -72,10 +72,14 @@ async function init() {
   const idx = parseInt(params.get("i"));
   const day = parseInt(params.get("day") || "0");
 
-  let data;
+  let data, historyData;
   try {
-    const resp = await fetch("data/latest.json");
+    const [resp, histResp] = await Promise.all([
+      fetch("data/latest.json"),
+      fetch("data/history.json").catch(() => null),
+    ]);
     data = await resp.json();
+    historyData = histResp ? await histResp.json() : [];
   } catch (e) {
     document.getElementById("content").innerHTML = "<p>No data. Run morel_finder.py first.</p>";
     return;
@@ -87,6 +91,7 @@ async function init() {
   }
 
   const burn = data.burns[idx];
+  burn.history = historyData[idx] || {};  // attach history by same index
   const d = burn.days[day] || burn.days[0];
   const total = d.total;
   const ratingColor = total >= 80 ? "purple" : total >= 70 ? "green" : total >= 50 ? "orange" : "red";
@@ -117,34 +122,123 @@ async function init() {
   }
   html += `</div></div>`;
 
+  // Date formatter: "Apr 20" or "Sun"
+  const dayNames = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
+  const monthNames = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+  function fmtDate(dateStr, i) {
+    if (!dateStr) return i === 0 ? "Today" : `+${i}`;
+    const dt = new Date(dateStr + "T12:00:00");
+    if (i === 0) return "Today";
+    return dayNames[dt.getDay()];
+  }
+  function fmtDateLong(dateStr) {
+    if (!dateStr) return "";
+    const dt = new Date(dateStr + "T12:00:00");
+    return `${dayNames[dt.getDay()]} ${monthNames[dt.getMonth()]} ${dt.getDate()}`;
+  }
+
   // 8-day charts
   html += `<div class="charts">`;
 
   // Score chart
   html += chartCard("8-Day Score", burn.days.map(d => d.total), burn.days.map((d,i) => {
     const c = d.total >= 80 ? "purple" : d.total >= 70 ? "green" : d.total >= 50 ? "orange" : "#666";
-    return { val: d.total, color: c, label: d.date?.slice(5) || `+${i}` };
+    return { val: d.total, color: c, label: fmtDate(d.date, i) };
   }), day, 100);
 
   // Soil temp
   const soilTemps = burn.days.map(d => { const m = (d.soil_temp||"").match(/(\d+)/); return m ? parseInt(m[1]) : null; });
   if (soilTemps.some(v => v)) {
     html += chartCard("Soil Temperature (F)", soilTemps, soilTemps.map((v,i) => ({
-      val: v, color: "#c0392b", label: burn.days[i].date?.slice(5) || `+${i}`
+      val: v, color: "#c0392b", label: fmtDate(burn.days[i].date, i)
     })), day, 80);
   }
 
   // Moisture
   html += chartCard("Moisture Score", burn.days.map(d => d.recent_moisture || 0), burn.days.map((d,i) => ({
-    val: d.recent_moisture || 0, color: "#2980b9", label: burn.days[i].date?.slice(5) || `+${i}`
+    val: d.recent_moisture || 0, color: "#2980b9", label: fmtDate(burn.days[i].date, i)
   })), day, 20);
 
-  // GDD
-  html += chartCard("Soil GDD Score", burn.days.map(d => d.soil_gdd || 0), burn.days.map((d,i) => ({
-    val: d.soil_gdd || 0, color: "#e67e22", label: burn.days[i].date?.slice(5) || `+${i}`
+  // GDD — use the numeric score, not the "786 GDD" string
+  const gddScores = burn.days.map(d => {
+    // soil_gdd might be the score (number) or the detail string "786 GDD"
+    const v = d.soil_gdd;
+    return typeof v === "number" ? v : 0;
+  });
+  html += chartCard("Soil GDD Score", gddScores, gddScores.map((v,i) => ({
+    val: v, color: "#e67e22", label: fmtDate(burn.days[i].date, i)
   })), day, 25);
 
   html += `</div>`;
+
+  // Historical data charts (30-day history + 14-day forecast)
+  const h = burn.history || {};
+  if (h.hist_soil_temp || h.forecast_soil_temp) {
+    const histSoil = h.hist_soil_temp || [];
+    const fcSoil = h.forecast_soil_temp || [];
+    const allSoil = [...histSoil, ...fcSoil];
+    if (allSoil.length > 0) {
+      html += `<div class="chart-card" style="grid-column: 1 / -1;">`;
+      html += `<h3>Soil Temperature — 30-Day History + 7-Day Forecast</h3>`;
+      html += `<div style="display:flex;gap:1px;align-items:flex-end;height:100px;">`;
+      const maxT = Math.max(...allSoil.filter(v => v != null), 70);
+      for (let i = 0; i < allSoil.length; i++) {
+        const v = allSoil[i];
+        if (v == null) { html += `<div style="flex:1"></div>`; continue; }
+        const pct = Math.max((v / maxT) * 100, 3);
+        const isForecast = i >= histSoil.length;
+        const isToday = i === histSoil.length + 7;
+        const color = isForecast ? "#c0392b" : "#8b3a3a";
+        const border = isToday ? "outline:2px solid #e94560;" : "";
+        html += `<div style="flex:1;height:${pct}%;background:${color};opacity:${isForecast ? 1 : 0.6};border-radius:1px 1px 0 0;${border}" title="Day ${i - histSoil.length}: ${v}F"></div>`;
+      }
+      html += `</div>`;
+      html += `<div style="display:flex;justify-content:space-between;font-size:9px;color:#666;margin-top:2px;">`;
+      html += `<span>30 days ago</span><span style="color:#e94560;">today</span><span>+7 days</span>`;
+      html += `</div></div>`;
+    }
+  }
+
+  // Historical precip
+  if (h.hist_precip) {
+    const precip = h.hist_precip;
+    html += `<div class="chart-card" style="grid-column: 1 / -1;">`;
+    html += `<h3>Precipitation — 30-Day History (in/day)</h3>`;
+    html += `<div style="display:flex;gap:1px;align-items:flex-end;height:60px;">`;
+    const maxP = Math.max(...precip.filter(v => v != null), 0.5);
+    for (let i = 0; i < precip.length; i++) {
+      const v = precip[i];
+      if (v == null || v === 0) { html += `<div style="flex:1"></div>`; continue; }
+      const pct = Math.max((v / maxP) * 100, 5);
+      const big = v > 0.4;  // >10mm rain event
+      html += `<div style="flex:1;height:${pct}%;background:${big ? '#2980b9' : '#1a4a6e'};border-radius:1px 1px 0 0;" title="Day ${i-30}: ${v.toFixed(2)}in${big ? ' (>0.4in event)' : ''}"></div>`;
+    }
+    html += `</div>`;
+    html += `<div style="display:flex;justify-content:space-between;font-size:9px;color:#666;margin-top:2px;">`;
+    html += `<span>30 days ago</span><span>today</span>`;
+    html += `</div></div>`;
+  }
+
+  // Historical snow depth
+  if (h.forecast_snow_depth) {
+    const snow = h.forecast_snow_depth;
+    if (snow.some(v => v > 0)) {
+      html += `<div class="chart-card" style="grid-column: 1 / -1;">`;
+      html += `<h3>Snow Depth — 14-Day Window (inches)</h3>`;
+      html += `<div style="display:flex;gap:1px;align-items:flex-end;height:60px;">`;
+      const maxS = Math.max(...snow.filter(v => v != null), 1);
+      for (let i = 0; i < snow.length; i++) {
+        const v = snow[i];
+        if (v == null || v === 0) { html += `<div style="flex:1"></div>`; continue; }
+        const pct = Math.max((v / maxS) * 100, 5);
+        html += `<div style="flex:1;height:${pct}%;background:#87CEEB;border-radius:1px 1px 0 0;" title="Day ${i-7}: ${v.toFixed(1)}in"></div>`;
+      }
+      html += `</div>`;
+      html += `<div style="display:flex;justify-content:space-between;font-size:9px;color:#666;margin-top:2px;">`;
+      html += `<span>7 days ago</span><span>today</span><span>+7 days</span>`;
+      html += `</div></div>`;
+    }
+  }
 
   // Soil deltas chart
   const deltas = d.soil_deltas;
@@ -207,7 +301,7 @@ async function init() {
     const sel = i === day;
     const c = dd.total >= 80 ? "purple" : dd.total >= 70 ? "green" : dd.total >= 50 ? "orange" : "#666";
     html += `<a href="?i=${idx}&day=${i}" style="flex:1;padding:8px 4px;text-align:center;background:${sel ? c : '#16213e'};color:${sel ? 'white' : '#888'};border-radius:4px;text-decoration:none;font-size:12px;">`;
-    html += `${i === 0 ? "NOW" : "+" + i}<br>${dd.total}`;
+    html += `${fmtDate(dd.date, i)}<br><b>${dd.total}</b>`;
     html += `</a>`;
   }
   html += `</div>`;

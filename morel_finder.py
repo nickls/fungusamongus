@@ -68,6 +68,7 @@ def export_json(results, all_fires, run_date):
         "local_radius_km": LOCAL_RADIUS_KM,
         "burns": [],
     }
+    history_data = []  # raw weather arrays, indexed same as burns
     for r in results:
         z = r["zone"]
         f = r.get("fire", {})
@@ -82,6 +83,20 @@ def export_json(results, all_fires, run_date):
                 # Include key weather details for popup
                 **{k: v for k, v in ds.get("details", {}).items() if isinstance(v, (str, int, float))},
             })
+        # Raw weather time series for detail page visualization
+        wx = r.get("weather", {})
+        history = {}
+        for key in ["hist_soil_temp", "hist_precip", "hist_snowfall",
+                     "hist_temps_max", "hist_temps_min"]:
+            vals = wx.get(key, [])
+            if vals:
+                history[key] = [round(v, 1) if v is not None else None for v in vals]
+        for key in ["forecast_soil_temp", "forecast_snow_depth",
+                     "forecast_temps_max", "forecast_temps_min"]:
+            vals = wx.get(key, [])
+            if vals:
+                history[key] = [round(v, 1) if v is not None else None for v in vals]
+
         data["burns"].append({
             "name": z["name"],
             "lat": z["lat"],
@@ -94,13 +109,20 @@ def export_json(results, all_fires, run_date):
             "aspect": z.get("aspect"),
             "days": days,
         })
+        # Collect history separately to keep latest.json lean
+        history_data.append(history)
 
     out_dir = Path("docs/data")
     out_dir.mkdir(parents=True, exist_ok=True)
     out_path = out_dir / "latest.json"
     out_path.write_text(json.dumps(data, indent=None, separators=(",", ":")))
     size_kb = out_path.stat().st_size / 1024
-    print(f"  docs/data/latest.json ({size_kb:.0f}KB, {len(data['burns'])} burns x {len(days)} days)")
+
+    # History file — raw weather arrays for detail page charts
+    hist_path = out_dir / "history.json"
+    hist_path.write_text(json.dumps(history_data, indent=None, separators=(",", ":")))
+    hist_kb = hist_path.stat().st_size / 1024
+    print(f"  docs/data/latest.json ({size_kb:.0f}KB) + history.json ({hist_kb:.0f}KB)")
 
 
 def gather_fire_data(center, radius_km):
