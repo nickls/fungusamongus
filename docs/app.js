@@ -246,7 +246,7 @@ function render() {
       const showDiamond = potential >= 70;  // good burn sites always get diamonds
 
       if (showDiamond) {
-        const size = 18 + Math.floor(potential / 10);  // bigger = higher potential
+        const size = 14 + Math.floor((potential - 50) / 3);  // 50pot=14px, 70=21px, 90=27px, 100=31px
         const icon = L.divIcon({
           className: "",
           html: `<div style="
