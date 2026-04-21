@@ -315,7 +315,7 @@ def score_potential(fire, elev, terrain, mushroom_type="morel"):
     """Score site quality. Stable — doesn't change with weather."""
     mt = MUSHROOM_TYPES[mushroom_type]
     w = mt.get("potential_weights", {
-        "burn_quality": 35, "elevation": 25, "aspect": 20, "season": 10, "freeze_damage": 10
+        "burn_quality": 50, "elevation": 20, "aspect": 15, "season": 10, "freeze_damage": 5
     })
     scores = {}
     details = {}
