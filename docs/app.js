@@ -4,13 +4,15 @@ const ALDER_CREEK = [39.3187, -120.2125];
 const LOCAL_BOUNDS = [[39.0, -120.65], [39.65, -119.75]];
 const BASIN_BOUNDS = [[38.5, -121.3], [39.9, -119.3]];
 
-const FACTORS = [
-  { key: "soil_threshold", label: "Soil Temp", max: 25, default: 10, color: "#c0392b", tip: "Is soil 45-58F? Hard gate — below 38F, entire score is crushed. Literature: onset at 43F." },
-  { key: "soil_gdd", label: "Soil GDD", max: 25, default: 5, color: "#e67e22", tip: "Cumulative growing degree-days (base 32F). Literature: 365-580 GDD predicts morel onset." },
-  { key: "recent_moisture", label: "Moisture", max: 20, default: 5, color: "#2980b9", tip: "Rain or snowmelt in last 3-10 days. Drives fruiting yield." },
-  { key: "burn_quality", label: "Burn Quality", max: 15, default: 5, color: "#f39c12", tip: "Burn recency (3-8mo ideal), type (underburn > pile), acreage." },
-  { key: "sun_aspect", label: "Sun/Aspect", max: 10, default: 4, color: "#27ae60", tip: "South-facing slopes melt first. Includes slope angle + elevation band." },
-  { key: "air_temp", label: "Air Temp", max: 5, default: 2, color: "#7f8c8d", tip: "Daily highs/lows. Indirect proxy — soil temp matters more." },
+const FILTERS = [
+  // Phase scores
+  { key: "potential", label: "Min Potential", max: 100, default: 50, color: "#53a8b6", tip: "Site quality — burn recency, type, elevation, aspect." },
+  { key: "readiness", label: "Min Readiness", max: 100, default: 0, color: "#e94560", tip: "How close to fruiting — start days, grow days, weather." },
+  // Raw conditions (from legacy day scores)
+  { key: "soil_threshold", label: "Min Soil Temp", max: 25, default: 0, color: "#c0392b", tip: "Filter by soil temperature score." },
+  { key: "recent_moisture", label: "Min Moisture", max: 20, default: 0, color: "#2980b9", tip: "Filter by moisture score." },
+  { key: "burn_quality", label: "Min Burn Quality", max: 15, default: 0, color: "#f39c12", tip: "Filter by burn recency + type." },
+  { key: "air_temp", label: "Min Air Temp", max: 5, default: 0, color: "#7f8c8d", tip: "Filter by air temperature score." },
 ];
 
 let map, markersLayer, heatLayer;
@@ -74,9 +76,9 @@ function buildDayBar() {
     const label = d === 0 ? "NOW" : `+${d}`;
     const dateStr = dayData.date ? dayData.date.slice(5) : "";
 
-    // Count excellent sites for this day
+    // Count EMERGING sites for this day
     const excellent = data.burns.filter(b =>
-      b.days[d] && b.days[d].total >= 80
+      (b.phase_days || [])[d] && (b.phase_days || [])[d].phase === "EMERGING"
     ).length;
 
     const btn = document.createElement("button");
@@ -101,12 +103,7 @@ function selectDay(d) {
 function buildSliders() {
   const group = document.getElementById("slider-group");
 
-  // Total minimum slider
-  const totalRow = makeSlider("total", "Minimum Total", 100, 50);
-  group.appendChild(totalRow);
-
-  // Per-factor sliders with smart defaults
-  for (const f of FACTORS) {
+  for (const f of FILTERS) {
     const row = makeSlider(f.key, f.label, f.max, f.default || 0);
     group.appendChild(row);
   }
@@ -139,9 +136,8 @@ function makeSlider(key, label, max, initial) {
 }
 
 function resetSliders() {
-  // Reset to smart defaults, not zero
-  const defaults = { total: 50 };
-  for (const f of FACTORS) defaults[f.key] = f.default || 0;
+  const defaults = {};
+  for (const f of FILTERS) defaults[f.key] = f.default || 0;
 
   document.querySelectorAll("#slider-group .slider-row").forEach(row => {
     const input = row.querySelector("input[type=range]");
@@ -196,15 +192,19 @@ function render() {
     const day = burn.days[selectedDay];
     if (!day) continue;
 
-    // Apply filters
-    if (day.total < totalMin) { hidden++; continue; }
-    // Hide TOO_EARLY sites — nothing happening there
+    // Apply filters — potential and readiness
     const pd0 = (burn.phase_days || [])[selectedDay] || {};
-    if (pd0.phase === "TOO_EARLY") { hidden++; continue; }
+    const potential = burn.potential || 0;
+    const readiness0 = pd0.readiness || 0;
 
+    if (potential < (filters.potential || 0)) { hidden++; continue; }
+    if (readiness0 < (filters.readiness || 0)) { hidden++; continue; }
+
+    // Raw condition filters (from legacy day scores)
     let filtered = false;
-    for (const f of FACTORS) {
-      if (filters[f.key] && day[f.key] < filters[f.key]) {
+    for (const f of FILTERS) {
+      if (f.key === "potential" || f.key === "readiness") continue;
+      if (filters[f.key] && day[f.key] != null && day[f.key] < filters[f.key]) {
         filtered = true;
         break;
       }
