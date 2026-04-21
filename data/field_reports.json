@@ -1,0 +1,31 @@
+[
+  {
+    "id": "FR-001",
+    "date": "2026-04-20",
+    "observer": "nickls",
+    "site": "T27 Underburn",
+    "lat": null,
+    "lon": null,
+    "burn_type": "underburn",
+    "morels_found": 0,
+    "other_mushrooms": "very few of any kind",
+    "conditions": {
+      "moisture": "adequate",
+      "soil_temp_feel": "too cold",
+      "burn_severity_observed": "sporadic, not deep — low actual severity",
+      "snow": null,
+      "notes": "Burn was patchy and shallow. No mineral soil exposure in most areas. Soil still hasn't warmed from winter — cold snap hasn't even hit yet (coming night of Apr 20-21)."
+    },
+    "model_validation": {
+      "predicted_phase": null,
+      "predicted_readiness": null,
+      "predicted_potential": null,
+      "outcome": "negative",
+      "lessons": [
+        "Readiness overestimated — soil still too cold from winter",
+        "Underburn type label does not indicate adequate severity for morels",
+        "Burn type scores were inverted — fixed: machine pile > hand pile > underburn"
+      ]
+    }
+  }
+]

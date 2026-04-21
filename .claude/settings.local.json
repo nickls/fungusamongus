@@ -20,7 +20,9 @@
       "WebFetch(domain:github.com)",
       "Bash(git add:*)",
       "Bash(.venv/bin/pip install:*)",
-      "Bash(git push:*)"
+      "Bash(git push:*)",
+      "WebFetch(domain:api.github.com)",
+      "WebFetch(domain:edcintl.cr.usgs.gov)"
     ]
   },
   "sandbox": {

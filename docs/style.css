@@ -239,6 +239,19 @@ body {
 }
 .stats span { color: #53a8b6; font-weight: bold; }
 
+/* Score info */
+.score-info {
+  font-size: 11px;
+  color: #aaa;
+  padding: 8px 10px;
+  background: #0f346020;
+  border: 1px solid #0f3460;
+  border-radius: 6px;
+  line-height: 1.5;
+}
+.score-info-item { margin: 4px 0; }
+.score-info-item b { color: #53a8b6; }
+
 /* Legend */
 .legend {
   font-size: 12px;

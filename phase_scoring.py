@@ -311,11 +311,11 @@ def score_readiness_manual(features, config=None):
 
 # ── Potential score (site quality — no weather dependency) ──
 
-def score_potential(fire, elev, terrain, mushroom_type="morel"):
+def score_potential(fire, elev, terrain, mushroom_type="morel", evt=None):
     """Score site quality. Stable — doesn't change with weather."""
     mt = MUSHROOM_TYPES[mushroom_type]
     w = mt.get("potential_weights", {
-        "burn_quality": 50, "elevation": 20, "aspect": 15, "season": 10, "freeze_damage": 5
+        "burn_quality": 40, "elevation": 15, "aspect": 15, "vegetation": 15, "season": 10, "freeze_damage": 5
     })
     scores = {}
     details = {}
@@ -406,8 +406,18 @@ def score_potential(fire, elev, terrain, mushroom_type="morel"):
     scores["season"] = max_pts if in_season else round(max_pts * 0.3)
     details["in_season"] = "YES" if in_season else f"no ({lo}-{hi})"
 
+    # Vegetation type (from LANDFIRE EVT)
+    max_pts = w.get("vegetation", 15)
+    if evt and evt.get("evt_suitability") is not None:
+        veg_score = round(max_pts * evt["evt_suitability"])
+        details["vegetation"] = evt.get("evt_name", "Unknown")
+    else:
+        veg_score = round(max_pts * 0.5)  # unknown = assume moderate
+        details["vegetation"] = "No data"
+    scores["vegetation"] = veg_score
+
     # Freeze damage — placeholder, computed from timeline
-    scores["freeze_damage"] = w.get("freeze_damage", 10)  # full marks if no freeze
+    scores["freeze_damage"] = w.get("freeze_damage", 5)  # full marks if no freeze
 
     potential = sum(scores.values())
     return {"potential": potential, "scores": scores, "details": details}

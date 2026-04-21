@@ -7,11 +7,16 @@ Morel mushroom foraging recommender for the Greater Tahoe Basin. Scores burn sit
 ## Architecture
 
 ```
-morel_finder.py    # Runner/orchestrator (~130 lines)
+morel_finder.py    # Runner/orchestrator (~180 lines)
 config.py          # ALL scoring parameters — weights, thresholds, curves
-scoring.py         # Config-driven scoring engine
+phase_scoring.py   # v0.7.0 phase model — classify_day, build_timeline, score_potential/readiness
+scoring.py         # Legacy v0.6 scoring engine (kept for backward compat, pending consolidation)
 mapping.py         # Folium maps, matplotlib charts, text reports
 ALGO.md            # Full scoring algorithm documentation — KEEP UPDATED
+docs/              # SPA frontend (Leaflet map, detail page) — hosted on GitHub Pages
+  app.js           # Map, markers, day picker, filter sliders
+  detail.html      # Per-burn detail page with timeline, charts
+  index.html       # Main map page
 utils/
   cache.py         # JSON file cache with TTL
   http.py          # fetch_json wrapper
@@ -19,20 +24,23 @@ utils/
   elevation.py     # USGS EPQS elevation + slope/aspect computation
   fires.py         # NIFC Interagency History + Tahoe Fuels Treatments (ArcGIS)
   pfirs.py         # PFIRS scraper (CARB prescribed fire data, no API)
+  landfire.py      # LANDFIRE EVT vegetation type (ImageServer identify)
+  fit_regression.py # Logistic regression training on labeled scenarios
 ```
 
 ## Key design decisions
 
 - **Score burn locations directly** — don't score arbitrary points and check proximity to fires. The burn IS the candidate.
-- **Moisture is the gate, soil temp is the trigger** — the biology demands moisture first (non-negotiable), then warming soil temps to initiate fruiting. The scoring weights reflect this: moisture 30, temperature 25, burn quality 35, elevation 10.
-- **Warming trend matters more than threshold** — a soil temp of 52F that's been rising for 2 weeks is better signal than 52F that's been flat. We compare first-half vs second-half of the soil temp series.
+- **Dual-score phase model (v0.7.0)** — Potential (0-100, site quality, stable) + Readiness (0-100, weather conditions, changes daily). Each day classified as START/GROW/BAD. Readiness via logistic regression on 70 labeled scenarios.
+- **Moisture is the gate, soil temp is the trigger** — the biology demands moisture first (non-negotiable), then warming soil temps to initiate fruiting.
+- **Warming trend matters more than threshold** — a soil temp of 52F that's been rising for 2 weeks is better signal than 52F that's been flat.
 - **PFIRS is the highest-signal fire source** — small prescribed burns (5-50ac) are the best morel habitat and only exist in PFIRS. MTBS, WFIGS, CAL FIRE all miss them.
 - **All scoring params live in config.py** — to experiment with different algorithms, copy config.py, adjust weights/curves, run with --config.
 
 ## When making changes
 
-- **Changing scoring logic**: Edit `scoring.py`. All thresholds come from `config.py` via the mushroom type profile. If adding a new scoring factor, add the weight to `MOREL_PROFILE["weights"]` in config.py. **IMPORTANT: Update ALGO.md whenever scoring logic, weights, thresholds, or factors change.** ALGO.md is the canonical documentation of how the algorithm works — it must stay in sync with the code.
-- **Changing map appearance**: Edit `mapping.py`. Heatmap intensity, marker styles, legend are all there.
+- **Changing scoring logic**: Edit `phase_scoring.py` (primary) or `scoring.py` (legacy). All thresholds come from `config.py` via the mushroom type profile. **IMPORTANT: Update ALGO.md whenever scoring logic, weights, thresholds, or factors change.** ALGO.md is the canonical documentation of how the algorithm works — it must stay in sync with the code.
+- **Changing map appearance**: Edit `docs/app.js` (SPA) or `mapping.py` (static Folium maps).
 - **Adding a data source**: Add to `utils/`, import in `morel_finder.py`'s `gather_fire_data()`.
 - **Adding a mushroom type**: Add profile to `MUSHROOM_TYPES` in `config.py`. Will need different candidate generation (not burn sites) — that logic goes in `morel_finder.py`.
 
@@ -62,3 +70,7 @@ python morel_finder.py
 ```
 
 Outputs are date-stamped: `morel_local_2026-04-19.html`, etc.
+
+## Project management
+
+No GitHub Issues or PRs — all task tracking lives in `TODO.md`.

@@ -68,12 +68,31 @@
 
       <div class="stats" id="stats"></div>
 
+      <div class="score-info">
+        <div class="score-info-item"><b>Potential</b> (0–100): Site quality — burn age, type, elevation, aspect. Stable across days.</div>
+        <div class="score-info-item"><b>Readiness</b> (0–100): Weather conditions for fruiting — soil temp, moisture, grow days. Changes daily.</div>
+      </div>
+
       <div class="legend">
         <div class="legend-item"><div class="legend-diamond" style="background:purple;"></div> Emerging — go now</div>
         <div class="legend-item"><div class="legend-diamond" style="background:green;"></div> Growing — go soon</div>
         <div class="legend-item"><div class="legend-diamond" style="background:orange;"></div> Waiting — not yet</div>
         <div class="legend-item"><div class="legend-dot" style="background:orange;"></div> Low potential / waiting</div>
         <div class="legend-item" style="color:#666;font-size:10px;margin-top:4px;">Diamond size = potential | Number = readiness</div>
+      </div>
+
+      <div class="legend" id="veg-legend" style="display:none;">
+        <div style="font-size:11px;color:#888;margin-bottom:4px;">Vegetation (LANDFIRE EVT)</div>
+        <div class="legend-item"><div class="legend-dot" style="background:#00de00;"></div> Mixed Conifer (prime)</div>
+        <div class="legend-item"><div class="legend-dot" style="background:#00cc00;"></div> Mesic Mixed Conifer</div>
+        <div class="legend-item"><div class="legend-dot" style="background:#00ad00;"></div> Jeffrey Pine</div>
+        <div class="legend-item"><div class="legend-dot" style="background:#009e00;"></div> Red Fir</div>
+        <div class="legend-item"><div class="legend-dot" style="background:#00bd00;"></div> Lower Montane Conifer</div>
+        <div class="legend-item"><div class="legend-dot" style="background:#c0ff8a;"></div> Aspen-Conifer</div>
+        <div class="legend-item"><div class="legend-dot" style="background:#a3f0db;"></div> Lodgepole</div>
+        <div class="legend-item"><div class="legend-dot" style="background:#009100;"></div> Subalpine</div>
+        <div class="legend-item"><div class="legend-dot" style="background:#826548;"></div> Sagebrush</div>
+        <div class="legend-item"><div class="legend-dot" style="background:#003d00;"></div> Mixed Evergreen</div>
       </div>
 
       <div style="margin-top:auto;padding-top:12px;border-top:1px solid #0f3460;font-size:11px;color:#53a8b6;text-align:center;letter-spacing:0.5px;">

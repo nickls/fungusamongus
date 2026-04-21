@@ -31,11 +31,12 @@ Stable. Doesn't change day to day. Based on the burn itself, not weather.
 
 | Factor | Weight | What it measures |
 |--------|--------|-----------------|
-| **Burn Quality** | 50 | Recency (3-8mo prime), type (underburn > pile), acreage |
-| **Elevation** | 20 | Is this in the current seasonal fruiting band? |
-| **Aspect** | 15 | South-facing advantage (month-adjusted) |
+| **Burn Quality** | 40 | Recency (3-8mo prime), type (machine pile > hand pile > underburn), acreage |
+| **Vegetation** | 15 | LANDFIRE EVT — mixed conifer best, sagebrush worst |
+| **Elevation** | 15 | Is this in the current seasonal fruiting band? |
+| **Aspect** | 10 | South-facing advantage (month-adjusted) |
 | **Season** | 10 | Are we in the Apr-Jul window? |
-| **Freeze Damage** | 5 | Penalty if freeze killed developing primordia |
+| **Freeze Damage** | 10 | Penalty if freeze killed developing primordia |
 
 Burn quality recency curve:
 
@@ -47,6 +48,21 @@ Burn quality recency curve:
 | 15-20 months | 20% | Declining |
 | 21-30 months | 10% | Marginal |
 | >30 months | 0% | Done — type/size bonus also zeroed |
+
+Vegetation type suitability (from LANDFIRE LF2024 EVT via ImageServer identify):
+
+| Vegetation Type | Suitability | Code Examples |
+|----------------|-------------|---------------|
+| **Mixed conifer** (white fir, sugar pine) | 1.0 | 7027, 7028 |
+| **Aspen-mixed conifer** | 0.9 | 7080 |
+| **Jeffrey/ponderosa pine** | 0.8 | 7031 |
+| **Red fir** | 0.8 | 7033 |
+| **East Cascades mixed conifer** | 0.7 | 7011 |
+| **Subalpine lodgepole** | 0.5 | 7044 |
+| **Subalpine woodland** | 0.4 | 7098, 7105 |
+| **Pinyon-juniper** | 0.2 | 7126 |
+| **Sagebrush / shrubland** | 0.0 | 7299 |
+| **Developed / water** | 0.0 | 9xxx, 7292 |
 
 ### Readiness (0-100) — "Is this site ready to produce morels?"
 
@@ -130,7 +146,7 @@ Key findings from peer-reviewed studies (full review: [reference/predictive-mode
 
 ## What the Model Does NOT Capture
 
-- **Vegetation type** — mixed conifer (ideal) vs chaparral (poor). LANDFIRE planned.
+- **Vegetation type** — ~~LANDFIRE planned~~ **Implemented** (v0.7.1). EVT from LANDFIRE LF2024 ImageServer. 15 pts in potential.
 - **Actual burn severity** — PFIRS burn type is a proxy. dNBR satellite data would be better.
 - **Soil type** — sandy/well-drained soils produce better.
 - **Surface burn fraction** — research shows no morels below 50% ground surface burned.

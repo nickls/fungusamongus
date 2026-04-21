@@ -7,7 +7,7 @@ const BASIN_BOUNDS = [[38.5, -121.3], [39.9, -119.3]];
 const FILTERS = [
   // Phase scores
   { key: "potential", label: "Min Potential", max: 100, default: 50, color: "#53a8b6", tip: "Site quality — burn recency, type, elevation, aspect." },
-  { key: "readiness", label: "Min Readiness", max: 100, default: 0, color: "#e94560", tip: "How close to fruiting — start days, grow days, weather." },
+  { key: "readiness", label: "Min Readiness", max: 100, default: 25, color: "#e94560", tip: "How close to fruiting — start days, grow days, weather." },
   // Raw conditions (from legacy day scores)
   { key: "soil_threshold", label: "Min Soil Temp", max: 25, default: 0, color: "#c0392b", tip: "Filter by soil temperature score." },
   { key: "recent_moisture", label: "Min Moisture", max: 20, default: 0, color: "#2980b9", tip: "Filter by moisture score." },
@@ -50,7 +50,42 @@ async function init() {
     maxZoom: 18,
   });
   esriTopo.addTo(map);
-  L.control.layers({"Esri Topo": esriTopo, "CARTO": carto}, null, {position: "topright"}).addTo(map);
+
+  // LANDFIRE EVT vegetation overlay (ArcGIS ImageServer — needs bbox per tile)
+  const LandfireLayer = L.TileLayer.extend({
+    getTileUrl: function(coords) {
+      const tileSize = this.getTileSize();
+      const nwPoint = coords.scaleBy(tileSize);
+      const sePoint = nwPoint.add(tileSize);
+      const nw = this._map.unproject(nwPoint, coords.z);
+      const se = this._map.unproject(sePoint, coords.z);
+      return "https://lfps.usgs.gov/arcgis/rest/services/Landfire_LF2024/LF2024_EVT_CONUS/ImageServer/exportImage"
+        + `?bbox=${nw.lng},${se.lat},${se.lng},${nw.lat}&bboxSR=4326&size=256,256&format=png&transparent=true&f=image`;
+    },
+  });
+  const landfireEVT = new LandfireLayer("", {
+    attribution: "LANDFIRE",
+    opacity: 0.5,
+    maxZoom: 16,
+  });
+
+  L.control.layers(
+    {"Esri Topo": esriTopo, "CARTO": carto},
+    {"Vegetation (LANDFIRE)": landfireEVT},
+    {position: "topright"}
+  ).addTo(map);
+
+  // Show/hide veg legend when overlay is toggled
+  map.on("overlayadd", (e) => {
+    if (e.name === "Vegetation (LANDFIRE)") {
+      document.getElementById("veg-legend").style.display = "";
+    }
+  });
+  map.on("overlayremove", (e) => {
+    if (e.name === "Vegetation (LANDFIRE)") {
+      document.getElementById("veg-legend").style.display = "none";
+    }
+  });
 
   markersLayer = L.layerGroup().addTo(map);
 
@@ -104,12 +139,12 @@ function buildSliders() {
   const group = document.getElementById("slider-group");
 
   for (const f of FILTERS) {
-    const row = makeSlider(f.key, f.label, f.max, f.default || 0);
+    const row = makeSlider(f.key, f.label, f.max, f.default || 0, f.tip);
     group.appendChild(row);
   }
 }
 
-function makeSlider(key, label, max, initial) {
+function makeSlider(key, label, max, initial, tip) {
   filters[key] = initial;
 
   const row = document.createElement("div");
@@ -117,6 +152,16 @@ function makeSlider(key, label, max, initial) {
 
   const lbl = document.createElement("label");
   lbl.innerHTML = `${label} <span class="val" id="val-${key}">${initial}/${max}</span>`;
+
+  if (tip) {
+    const tipEl = document.createElement("div");
+    tipEl.style.cssText = "font-size:10px;color:#666;margin-top:-1px;margin-bottom:2px;";
+    tipEl.textContent = tip;
+    row.appendChild(lbl);
+    row.appendChild(tipEl);
+  } else {
+    row.appendChild(lbl);
+  }
 
   const input = document.createElement("input");
   input.type = "range";
@@ -130,7 +175,6 @@ function makeSlider(key, label, max, initial) {
     render();
   };
 
-  row.appendChild(lbl);
   row.appendChild(input);
   return row;
 }
@@ -183,8 +227,7 @@ function render() {
 
   if (!data) return;
 
-  const totalMin = filters.total || 0;
-  let shown = 0, hidden = 0, excellent = 0;
+  let shown = 0, hidden = 0;
   const heatData = [];
 
   for (let burnIdx = 0; burnIdx < data.burns.length; burnIdx++) {
@@ -212,11 +255,10 @@ function render() {
     if (filtered) { hidden++; continue; }
 
     shown++;
-    if (day.total >= 80) excellent++;
 
     // Heatmap data — scatter points across burn acreage
     const acres = burn.acres || 1;
-    const weight = day.total / 100;
+    const weight = potential / 100;
     const burnRadiusM = Math.sqrt(acres * 4047 / Math.PI);
     const burnRadiusDeg = burnRadiusM / 111000;
 
@@ -308,34 +350,7 @@ function render() {
 
 // ── Popup ──
 
-function miniChart(values, label, unit, color, highlightIdx, showLabels) {
-  if (!values || values.length === 0) return "";
-  const max = Math.max(...values.filter(v => v != null), 1);
-  const h = showLabels ? 28 : 18;
-  const top = showLabels ? 14 : 0;
-  let html = `<div style="display:flex;align-items:center;gap:6px;margin:4px 0;">`;
-  html += `<div style="font-size:9px;color:#999;width:50px;flex-shrink:0;text-align:right;">${label}</div>`;
-  html += `<div style="display:flex;gap:1px;align-items:flex-end;height:${h}px;flex:1;padding-top:${top}px;">`;
-  for (let i = 0; i < values.length; i++) {
-    const v = values[i];
-    if (v == null) { html += `<div style="flex:1;"></div>`; continue; }
-    const pct = Math.max((v / max) * 100, 6);
-    const sel = i === highlightIdx;
-    const opacity = sel ? 1 : 0.6;
-    const border = sel ? "outline:1.5px solid #333;" : "";
-    const lbl = typeof v === "number" ? (Number.isInteger(v) ? v : v.toFixed(0)) : v;
-    html += `<div style="flex:1;height:${pct}%;background:${color};opacity:${opacity};border-radius:2px 2px 0 0;${border}position:relative;" title="Day ${i}: ${lbl}${unit}">`;
-    if (showLabels) {
-      html += `<span style="position:absolute;top:-13px;left:50%;transform:translateX(-50%);font-size:8px;color:#555;white-space:nowrap;">${lbl}</span>`;
-    }
-    html += `</div>`;
-  }
-  html += `</div></div>`;
-  return html;
-}
-
 function makePopup(burn, day, burnIdx) {
-  const totalColor = day.total >= 80 ? "purple" : day.total >= 70 ? "green" : "orange";
   const pd = (burn.phase_days || [])[selectedDay] || {};
   const phase = pd.phase || "?";
   const readiness = pd.readiness || 0;
@@ -349,14 +364,15 @@ function makePopup(burn, day, burnIdx) {
   html += `<div style="font-size:11px;color:#888;margin-bottom:6px;">`;
   html += `${(burn.acres||0).toFixed(0)}ac | ${burn.burn_type} | ${burn.elevation_ft?.toFixed(0)||"?"}ft`;
   if (burn.slope != null) html += ` | ${burn.slope.toFixed(0)}deg ${aspectDir(burn.aspect)}`;
+  if (burn.evt_name) html += `<br>${burn.evt_name}`;
   html += ` | <a href="https://www.google.com/maps?q=${burn.lat},${burn.lon}" target="_blank" style="color:#53a8b6;">Map</a>`;
   html += `</div>`;
 
   // Phase banner
   html += `<div style="display:flex;gap:8px;align-items:center;margin:6px 0;padding:6px 8px;background:${phaseColor}20;border-left:3px solid ${phaseColor};border-radius:0 4px 4px 0;">`;
   html += `<span style="font-size:11px;font-weight:bold;color:${phaseColor};">${phase}</span>`;
-  html += `<span style="font-size:10px;color:#aaa;">Potential: ${potential}</span>`;
-  html += `<span style="font-size:10px;color:#aaa;">Readiness: ${readiness}</span>`;
+  html += `<span style="font-size:10px;color:#aaa;">Potential: ${potential}/100</span>`;
+  html += `<span style="font-size:10px;color:#aaa;">Readiness: ${readiness}/100</span>`;
   if (pd.grow_days) html += `<span style="font-size:10px;color:#888;">${pd.grow_days} grow days</span>`;
   html += `</div>`;
 
@@ -364,11 +380,11 @@ function makePopup(burn, day, burnIdx) {
   html += `<div style="display:flex;align-items:center;gap:12px;margin:6px 0;">`;
   html += `<div style="text-align:center;min-width:60px;">`;
   html += `<div style="font-size:11px;color:#888;">Potential</div>`;
-  html += `<div style="font-size:20px;font-weight:bold;color:#53a8b6;">${potential}</div>`;
+  html += `<div style="font-size:20px;font-weight:bold;color:#53a8b6;">${potential}<span style="font-size:11px;color:#666;">/100</span></div>`;
   html += `</div>`;
   html += `<div style="text-align:center;min-width:60px;">`;
   html += `<div style="font-size:11px;color:#888;">Readiness</div>`;
-  html += `<div style="font-size:20px;font-weight:bold;color:${phaseColor};">${readiness}</div>`;
+  html += `<div style="font-size:20px;font-weight:bold;color:${phaseColor};">${readiness}<span style="font-size:11px;color:#666;">/100</span></div>`;
   html += `</div>`;
   html += `<div style="font-size:10px;color:#888;line-height:1.4;">`;
   html += `${pd.grow_days || 0} grow / ${pd.start_days || 0} start days<br>`;
@@ -376,43 +392,6 @@ function makePopup(burn, day, burnIdx) {
   if (day.snow_status) html += `${day.snow_status}`;
   html += `</div>`;
   html += `</div>`;
-
-  // 8-day charts — score gets labels, others are compact
-  const totals = burn.days.map(d => d.total);
-  html += miniChart(totals, "Score", "", totalColor, selectedDay, true);
-
-  const soilTemps = burn.days.map(d => {
-    const m = (d.soil_temp || "").match(/(\d+)/);
-    return m ? parseInt(m[1]) : null;
-  });
-  if (soilTemps.some(v => v != null)) {
-    html += miniChart(soilTemps, "Soil", "F", "#c0392b", selectedDay, false);
-  }
-
-  const moisture = burn.days.map(d => d.recent_moisture || 0);
-  html += miniChart(moisture, "Moisture", "", "#2980b9", selectedDay, false);
-
-  const warming = burn.days.map(d => d.warming_trend || 0);
-  html += miniChart(warming, "Warming", "", "#e67e22", selectedDay, false);
-
-  // Soil temp daily deltas — shows rate of change over 14 days
-  const deltas = day.soil_deltas;
-  if (deltas && deltas.length > 0) {
-    html += `<div style="display:flex;align-items:center;gap:6px;margin:4px 0;">`;
-    html += `<div style="font-size:9px;color:#999;width:50px;flex-shrink:0;text-align:right;">Soil &Delta;/day</div>`;
-    html += `<div style="display:flex;gap:1px;align-items:center;height:24px;flex:1;">`;
-    const maxDelta = Math.max(...deltas.map(d => Math.abs(d)), 1);
-    for (let i = 0; i < deltas.length; i++) {
-      const d = deltas[i];
-      const pct = Math.max(Math.abs(d) / maxDelta * 100, 4);
-      const color = d > 0 ? "#e67e22" : d < 0 ? "#3498db" : "#666";
-      const up = d >= 0;
-      html += `<div style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:${up ? 'flex-end' : 'flex-start'};height:100%;" title="Day ${i+1}: ${d>0?'+':''}${d}F">`;
-      html += `<div style="width:100%;height:${pct/2}%;background:${color};border-radius:2px;min-height:1px;"></div>`;
-      html += `</div>`;
-    }
-    html += `</div></div>`;
-  }
 
   // Key details — compact
   html += `<div style="margin-top:8px;font-size:11px;color:#888;line-height:1.6;">`;

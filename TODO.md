@@ -8,18 +8,22 @@
 - [ ] Consolidate `scoring.py` (old) + `phase_scoring.py` (new) — remove legacy code
 
 ## Data sources
-- [ ] LANDFIRE vegetation type (EVT/EVH/EVC) for matsutake/porcini candidates
+- [x] LANDFIRE EVT integrated for morel potential scoring (mixed conifer = prime)
+- [ ] LANDFIRE EVT lookup table — expand beyond 19 codes as new codes appear
+- [ ] LANDFIRE EVH/EVC for matsutake/porcini candidates
 - [ ] NRCS soil type data (sandy = strong indicator)
 - [ ] Burn severity (dNBR from Sentinel-2) for actual severity vs PFIRS burn type proxy
 - [ ] PFIRS auto-refresh without browser cookie
 
 ## Frontend
-- [ ] Remove old 8-day mini-charts from popup (still showing legacy factor scores)
-- [ ] Heatmap uses old `day.total` — switch to potential-weighted
-- [ ] Detail page: clean up old score hero section, keep phase + charts
+- [x] Remove old 8-day mini-charts from popup (still showing legacy factor scores)
+- [x] Heatmap uses old `day.total` — switch to potential-weighted
+- [x] Detail page: clean up old score hero section, keep phase + charts
+- [x] Add Potential/Readiness explanation to sidebar
+- [x] Show scores as "/100" in popup and detail page
+- [x] Render filter slider tooltips
 - [ ] Detail page: timeline strip needs day-of-week labels
 - [ ] Filter sliders: add "By Conditions" tab (raw soil temp, precip, snow depth ranges)
-- [ ] Interactive score filter sliders (JS-based, from design doc)
 - [ ] Static PNG map export for GitHub Pages
 
 ## Multi-species
@@ -38,4 +42,4 @@
 - [x] ALGO.md updated for v0.7.0
 - [x] reference/algo/v0.7.0.md snapshot
 - [ ] README.md scoring section still references old model — needs update
-- [ ] CLAUDE.md architecture section needs phase_scoring.py added
+- [x] CLAUDE.md architecture section needs phase_scoring.py added

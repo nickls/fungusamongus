@@ -133,14 +133,19 @@ MOREL_PROFILE = {
         # >30 months: 0
     ],
     # Burn type: maps burn_type string -> fraction of weight
+    # Machine pile > hand pile > underburn for morels.
+    # Mechanism: duff removal + mineral soil exposure + root death + reduced competition.
+    # Machine pile = deep soil heating, full duff consumption → strongest trigger but patchy.
+    # Hand pile = similar but weaker, smaller footprint, more numerous.
+    # Underburn = generally poor — low duff consumption, minimal soil heating, trees survive.
     "burn_type_scores": {
-        "underburn": 0.30,
-        "broadcast": 0.30,
-        "hand pile": 0.20,
-        "pile": 0.20,
-        "machine pile": 0.15,
-        "rx_generic": 0.15,  # fallback for unspecified RX
-        "wildfire": 0.10,
+        "machine pile": 0.45,  # highest yield potential, very localized microclusters
+        "hand pile": 0.30,     # moderate probability, better spatial coverage
+        "pile": 0.30,          # generic pile = assume hand pile
+        "broadcast": 0.25,     # moderate severity, variable
+        "rx_generic": 0.15,    # unspecified RX — assume moderate
+        "wildfire": 0.35,      # best when moderate severity, variable — needs dNBR to score accurately
+        "underburn": 0.05,     # near-zero unless co-occurring with high-severity patches
     },
     # Acreage curve: list of (min_acres, fraction)
     "acreage_curve": [
@@ -162,6 +167,17 @@ MOREL_PROFILE = {
         "moderate": 2,  # 5-25 deg
         "flat": 1,      # <5 deg
         "steep": 0,     # >25 deg
+    },
+
+    # ── Potential weights (site quality — stable across days) ──
+    # Must sum to 100. Used by phase_scoring.score_potential().
+    "potential_weights": {
+        "burn_quality": 40,   # recency, type, size
+        "elevation": 15,      # seasonal band
+        "aspect": 10,         # south-facing advantage
+        "vegetation": 15,     # LANDFIRE EVT — mixed conifer best
+        "season": 10,         # Apr-Jul
+        "freeze_damage": 10,  # penalty if freeze killed primordia
     },
 }
 

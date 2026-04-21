@@ -28,6 +28,7 @@ from utils.weather import get_weather
 from utils.elevation import get_elevation_ft, get_slope_aspect, get_best_aspect
 from utils.fires import get_recent_fires, get_tahoe_fuels_treatments
 from utils.pfirs import load_pfirs_cache, pfirs_to_fire_records, filter_radius as pfirs_filter
+from utils.landfire import get_evt
 
 
 def haversine_km(lat1, lon1, lat2, lon2):
@@ -49,9 +50,11 @@ def score_burn(fire, mushroom_type="morel"):
     weather = get_weather(lat, lon)
     elev = get_elevation_ft(lat, lon)
     terrain = get_best_aspect(lat, lon)
+    evt = get_evt(lat, lon)
     name = fire.get("name", "?")
     zone = {"name": name, "lat": lat, "lon": lon, "elevation_ft": elev,
-            "slope": terrain.get("slope"), "aspect": terrain.get("aspect")}
+            "slope": terrain.get("slope"), "aspect": terrain.get("aspect"),
+            "evt_code": evt.get("evt_code"), "evt_name": evt.get("evt_name")}
 
     # Legacy scoring (kept for folium maps + backward compat)
     result = score_burn_site(fire, weather, elev, mushroom_type, terrain=terrain)
@@ -60,7 +63,7 @@ def score_burn(fire, mushroom_type="morel"):
     # Phase scoring (v0.7.0)
     config = MUSHROOM_TYPES.get(mushroom_type, {})
     timeline = build_timeline(weather, config)
-    potential = score_potential(fire, elev, terrain, mushroom_type)
+    potential = score_potential(fire, elev, terrain, mushroom_type, evt=evt)
 
     phase_days = []
     for d in range(8):
@@ -145,6 +148,7 @@ def export_json(results, all_fires, run_date):
             "elevation_ft": z.get("elevation_ft"),
             "slope": z.get("slope"),
             "aspect": z.get("aspect"),
+            "evt_name": z.get("evt_name"),
             # Phase scoring (v0.7.0)
             "potential": pot.get("potential", 0),
             "potential_scores": pot.get("scores", {}),
