@@ -11,23 +11,21 @@
     .container { max-width: 900px; margin: 0 auto; }
     a { color: #53a8b6; }
     h1 { color: #e94560; margin-bottom: 4px; }
-    .meta { font-size: 13px; color: #888; margin-bottom: 20px; }
-    .chart-card { background: #16213e; border-radius: 8px; padding: 16px; }
-    .chart-card h3 { font-size: 13px; color: #888; margin-bottom: 8px; }
-
-    .details-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin: 20px 0; }
-    .detail-item { background: #16213e; border-radius: 6px; padding: 10px 12px; }
-    .detail-item .label { font-size: 11px; color: #888; }
-    .detail-item .value { font-size: 14px; font-weight: bold; margin-top: 2px; }
-
-    .back { display: inline-block; margin-bottom: 16px; font-size: 13px; }
-    .map-link { display: inline-block; padding: 8px 16px; background: #0f3460; border-radius: 6px; text-decoration: none; color: white; margin: 8px 0; }
-    .map-link:hover { background: #53a8b6; }
+    .meta { font-size: 13px; color: #888; margin-bottom: 12px; }
+    .section { margin: 20px 0 0; }
+    .section-title { font-size: 11px; text-transform: uppercase; letter-spacing: 1px; color: #53a8b6; margin-bottom: 8px; padding-bottom: 4px; border-bottom: 1px solid #0f3460; }
+    .card { background: #16213e; border-radius: 8px; padding: 12px 14px; }
+    .card h3 { font-size: 13px; color: #888; margin-bottom: 8px; }
+    .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+    .details-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 6px; }
+    .detail-item { background: #0f3460; border-radius: 4px; padding: 6px 8px; }
+    .detail-item .label { font-size: 10px; color: #666; }
+    .detail-item .value { font-size: 13px; font-weight: bold; margin-top: 1px; }
+    .back { display: inline-block; margin-bottom: 12px; font-size: 13px; }
 
     @media (max-width: 600px) {
-      .charts { grid-template-columns: 1fr; }
-      .details-grid { grid-template-columns: 1fr; }
-      .score-hero { flex-direction: column; }
+      .two-col { grid-template-columns: 1fr; }
+      .details-grid { grid-template-columns: 1fr 1fr; }
     }
   </style>
 </head>
@@ -38,8 +36,32 @@
   </div>
 
   <script>
-// Phase colors used throughout the page
 const PHASE_COLORS = { EMERGING: "#27ae60", GROWING: "#f39c12", WAITING: "#e67e22", TOO_EARLY: "#95a5a6" };
+
+const EVT_COLORS = {
+  "Mediterranean California Dry-Mesic Mixed Conifer Forest and Woodland": "#00de00",
+  "Mediterranean California Mesic Mixed Conifer Forest and Woodland": "#00cc00",
+  "California Montane Jeffrey Pine-(Ponderosa Pine) Woodland": "#00ad00",
+  "Mediterranean California Red Fir Forest": "#009e00",
+  "Mediterranean California Lower Montane Conifer Forest and Woodland": "#00bd00",
+  "Inter-Mountain Basins Aspen-Mixed Conifer Forest and Woodland": "#c0ff8a",
+  "Sierra Nevada Subalpine Lodgepole Pine Forest and Woodland": "#a3f0db",
+  "Mediterranean California Subalpine Woodland": "#009100",
+  "Inter-Mountain Basins Big Sagebrush Shrubland": "#826548",
+  "Mediterranean California Mixed Evergreen Forest": "#003d00",
+};
+
+const EVT_SUIT = {
+  "Mixed Conifer": "Prime — highest morel producer",
+  "Jeffrey Pine": "Good — produces well after burns",
+  "Red Fir": "Good — true fir stands are productive",
+  "Lower Montane": "Good — mixed species",
+  "Aspen-Conifer": "Good — aspen mix is productive",
+  "Mixed Evergreen": "Decent — variable results",
+  "Lodgepole": "Marginal — cold, short season",
+  "Subalpine": "Marginal — high elevation, cold",
+  "Sagebrush": "Poor — no trees, no morels",
+};
 
 async function init() {
   const params = new URLSearchParams(window.location.search);
@@ -65,16 +87,14 @@ async function init() {
   }
 
   const burn = data.burns[idx];
-  burn.history = historyData[idx] || {};  // attach history by same index
+  burn.history = historyData[idx] || {};
   const d = burn.days[day] || burn.days[0];
 
-  // Phase data
   const pd = (burn.phase_days || [])[day] || {};
   const phase = pd.phase || "?";
   const readiness = pd.readiness || 0;
   const potential = burn.potential || 0;
-  const phaseColors = PHASE_COLORS;
-  const phaseColor = phaseColors[phase] || "#888";
+  const phaseColor = PHASE_COLORS[phase] || "#888";
   const phaseAdvice = {
     EMERGING: "GO NOW — conditions have built up, morels are emerging or about to",
     GROWING: "Go soon — growth accumulating, scout for early ones",
@@ -82,73 +102,66 @@ async function init() {
     TOO_EARLY: "No start event detected — conditions haven't triggered",
   };
 
+  const dayNames = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
+  const monthNames = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+  function fmtDate(dateStr, i) {
+    if (!dateStr) return i === 0 ? "Today" : `+${i}`;
+    if (i === 0) return "Today";
+    return dayNames[new Date(dateStr + "T12:00:00").getDay()];
+  }
+
   let html = "";
 
-  // Header
+  // ════════════════════════════════════════════════════════════════
+  // HEADER
+  // ════════════════════════════════════════════════════════════════
   html += `<h1>${burn.name}</h1>`;
   html += `<div class="meta">`;
   html += `${(burn.acres||0).toFixed(0)}ac | ${burn.burn_type} | ${burn.elevation_ft?.toFixed(0)||"?"}ft`;
-  if (burn.evt_name) html += ` | ${burn.evt_name}`;
   html += ` | <a href="https://www.google.com/maps?q=${burn.lat},${burn.lon}" target="_blank">Google Maps</a>`;
   html += ` | Algo ${data.algo_version} | Run ${data.run_date}`;
   html += `</div>`;
 
-  // Phase hero
-  html += `<div style="display:flex;gap:16px;align-items:center;margin:16px 0;padding:12px 16px;background:${phaseColor}15;border-left:4px solid ${phaseColor};border-radius:0 8px 8px 0;">`;
-  html += `<div style="text-align:center;">`;
+  // ════════════════════════════════════════════════════════════════
+  // PHASE HERO + DAY SELECTOR
+  // ════════════════════════════════════════════════════════════════
+  html += `<div style="display:flex;gap:16px;align-items:center;padding:12px 16px;background:${phaseColor}15;border-left:4px solid ${phaseColor};border-radius:0 8px 8px 0;">`;
+  html += `<div>`;
   html += `<div style="font-size:28px;font-weight:bold;color:${phaseColor};">${phase}</div>`;
-  html += `<div style="font-size:11px;color:#888;">${phaseAdvice[phase] || ""}</div>`;
+  html += `<div style="font-size:11px;color:#888;max-width:280px;">${phaseAdvice[phase] || ""}</div>`;
   html += `</div>`;
-  html += `<div style="margin-left:auto;text-align:right;font-size:12px;color:#aaa;">`;
-  html += `Potential: <b>${potential}</b><span style="color:#666;">/100</span><br>`;
-  html += `Readiness: <b>${readiness}</b><span style="color:#666;">/100</span><br>`;
-  html += `Grow days: <b>${pd.grow_days || 0}</b> | Start days: <b>${pd.start_days || 0}</b>`;
+  html += `<div style="margin-left:auto;display:flex;gap:20px;align-items:center;">`;
+  html += `<div style="text-align:center;"><div style="font-size:11px;color:#888;">Potential</div><div style="font-size:24px;font-weight:bold;color:#53a8b6;">${potential}<span style="font-size:11px;color:#666;">/100</span></div></div>`;
+  html += `<div style="text-align:center;"><div style="font-size:11px;color:#888;">Readiness</div><div style="font-size:24px;font-weight:bold;color:${phaseColor};">${readiness}<span style="font-size:11px;color:#666;">/100</span></div></div>`;
+  html += `<div style="text-align:center;font-size:11px;color:#888;line-height:1.6;">${pd.grow_days || 0} grow<br>${pd.start_days || 0} start</div>`;
   html += `</div></div>`;
 
-  // Vegetation card
-  const evtName = burn.evt_name;
-  if (evtName) {
-    const evtColors = {
-      "Mediterranean California Dry-Mesic Mixed Conifer Forest and Woodland": "#00de00",
-      "Mediterranean California Mesic Mixed Conifer Forest and Woodland": "#00cc00",
-      "California Montane Jeffrey Pine-(Ponderosa Pine) Woodland": "#00ad00",
-      "Mediterranean California Red Fir Forest": "#009e00",
-      "Mediterranean California Lower Montane Conifer Forest and Woodland": "#00bd00",
-      "Inter-Mountain Basins Aspen-Mixed Conifer Forest and Woodland": "#c0ff8a",
-      "Sierra Nevada Subalpine Lodgepole Pine Forest and Woodland": "#a3f0db",
-      "Mediterranean California Subalpine Woodland": "#009100",
-      "Inter-Mountain Basins Big Sagebrush Shrubland": "#826548",
-      "Mediterranean California Mixed Evergreen Forest": "#003d00",
-    };
-    const evtSuit = {
-      "Mixed Conifer": "Prime — highest morel producer",
-      "Jeffrey Pine": "Good — produces well after burns",
-      "Red Fir": "Good — true fir stands are productive",
-      "Lower Montane": "Good — mixed species",
-      "Aspen-Conifer": "Good — aspen mix is productive",
-      "Mixed Evergreen": "Decent — variable results",
-      "Lodgepole": "Marginal — cold, short season",
-      "Subalpine": "Marginal — high elevation, cold",
-      "Sagebrush": "Poor — no trees, no morels",
-    };
-    const evtColor = evtColors[evtName] || "#444";
-    let suitLabel = "";
-    for (const [key, val] of Object.entries(evtSuit)) {
-      if (evtName.includes(key)) { suitLabel = val; break; }
+  // 8-day forecast — selectable, replaces both old day selector and forecast section
+  if (burn.phase_days && burn.phase_days.length > 0) {
+    html += `<div style="display:flex;gap:3px;margin-top:4px;">`;
+    for (let i = 0; i < burn.phase_days.length; i++) {
+      const pd2 = burn.phase_days[i];
+      const pc = PHASE_COLORS[pd2.phase] || "#888";
+      const sel = i === day;
+      html += `<a href="?i=${idx}&day=${i}" style="flex:1;padding:6px 2px;text-align:center;background:${sel ? pc+'30' : '#16213e'};color:${sel ? 'white' : '#888'};border:1px solid ${sel ? pc : '#0f3460'};border-top:${sel ? '2px solid '+pc : 'none'};border-radius:0 0 6px 6px;text-decoration:none;cursor:pointer;">`;
+      html += `<div style="font-size:10px;color:${sel ? '#ccc' : '#666'};">${fmtDate(burn.days[i]?.date, i)}</div>`;
+      html += `<div style="font-size:16px;font-weight:bold;color:${pc};">${pd2.readiness}</div>`;
+      html += `<div style="font-size:9px;color:${sel ? '#ccc' : pc};text-transform:lowercase;">${pd2.phase}</div>`;
+      html += `<div style="font-size:9px;color:#666;">${pd2.grow_days}g ${pd2.start_days || 0}s</div>`;
+      html += `</a>`;
     }
-    const potScores = burn.potential_scores || {};
-    const vegScore = potScores.vegetation != null ? potScores.vegetation : "?";
-    html += `<div style="display:flex;align-items:center;gap:10px;margin:8px 0;padding:8px 12px;background:#16213e;border-left:4px solid ${evtColor};border-radius:0 6px 6px 0;">`;
-    html += `<div style="width:16px;height:16px;border-radius:50%;background:${evtColor};flex-shrink:0;"></div>`;
-    html += `<div style="flex:1;">`;
-    html += `<div style="font-size:12px;color:#ccc;">${evtName}</div>`;
-    if (suitLabel) html += `<div style="font-size:11px;color:#888;">${suitLabel}</div>`;
-    html += `</div>`;
-    html += `<div style="text-align:right;font-size:11px;color:#aaa;">Veg: <b>${vegScore}</b>/15</div>`;
     html += `</div>`;
   }
 
-  // Potential score breakdown
+  // ════════════════════════════════════════════════════════════════
+  // SITE — two columns: potential breakdown | site details
+  // ════════════════════════════════════════════════════════════════
+  html += `<div class="section"><div class="section-title">Site</div>`;
+  html += `<div class="two-col">`;
+
+  // Left: potential breakdown
+  html += `<div class="card">`;
+  html += `<h3>Potential Breakdown</h3>`;
   const potScores = burn.potential_scores || {};
   const potFactors = [
     { key: "burn_quality", label: "Burn Quality", max: 40, color: "#f39c12" },
@@ -158,205 +171,213 @@ async function init() {
     { key: "season", label: "Season", max: 10, color: "#e67e22" },
     { key: "freeze_damage", label: "Freeze", max: 10, color: "#9b59b6" },
   ];
-  html += `<div style="margin:8px 0;padding:10px 12px;background:#16213e;border-radius:6px;">`;
-  html += `<div style="font-size:11px;color:#888;margin-bottom:6px;">Potential Breakdown</div>`;
   for (const f of potFactors) {
     const v = potScores[f.key] || 0;
     const pct = (v / f.max) * 100;
-    html += `<div style="display:flex;align-items:center;gap:6px;margin:3px 0;font-size:11px;">`;
-    html += `<div style="width:80px;color:#aaa;text-align:right;">${f.label}</div>`;
+    html += `<div style="display:flex;align-items:center;gap:6px;margin:4px 0;font-size:11px;">`;
+    html += `<div style="width:75px;color:#aaa;text-align:right;">${f.label}</div>`;
     html += `<div style="flex:1;height:10px;background:#0f3460;border-radius:3px;overflow:hidden;">`;
     html += `<div style="height:100%;width:${pct}%;background:${f.color};border-radius:3px;"></div></div>`;
-    html += `<div style="width:40px;font-weight:bold;color:${v >= f.max * 0.7 ? f.color : '#666'};">${v}/${f.max}</div>`;
+    html += `<div style="width:36px;font-weight:bold;color:${v >= f.max * 0.7 ? f.color : '#666'};">${v}/${f.max}</div>`;
     html += `</div>`;
   }
   html += `</div>`;
 
-  // Where to look — slope/aspect/season recommendation
-  const siteSlope = burn.slope_centroid != null ? burn.slope_centroid : (burn.slope || null);
-  const siteAspect = burn.aspect != null ? burn.aspect : null;
-  const month = new Date().getMonth() + 1;  // 1-12
-  const siteElev = burn.elevation_ft || 0;
+  // Right: site details
+  html += `<div class="card">`;
+  html += `<h3>Site Details</h3>`;
 
-  const tips = [];
-
-  // Slope advice
-  if (siteSlope != null) {
-    if (siteSlope < 5) tips.push("Flat terrain — focus on slightly raised areas or edges where drainage is better. Avoid low spots that pool water.");
-    else if (siteSlope <= 15) tips.push("Ideal slope range. Good drainage + sun exposure. Search the full slope face.");
-    else if (siteSlope <= 25) tips.push("Moderate-steep slope. Focus on benches, flats, and areas where the grade eases. Morels cluster where debris collects.");
-    else tips.push("Steep terrain — concentrate on any benches or flat spots. The slope itself is likely too thin-soiled.");
+  // Vegetation
+  const evtName = burn.evt_name;
+  if (evtName) {
+    const evtColor = EVT_COLORS[evtName] || "#444";
+    let suitLabel = "";
+    for (const [key, val] of Object.entries(EVT_SUIT)) {
+      if (evtName.includes(key)) { suitLabel = val; break; }
+    }
+    html += `<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;padding-bottom:8px;border-bottom:1px solid #0f3460;">`;
+    html += `<div style="width:12px;height:12px;border-radius:50%;background:${evtColor};flex-shrink:0;"></div>`;
+    html += `<div style="flex:1;font-size:11px;"><div style="color:#ccc;">${evtName}</div>`;
+    if (suitLabel) html += `<div style="color:#888;font-size:10px;">${suitLabel}</div>`;
+    html += `</div></div>`;
   }
 
-  // Aspect + season advice
-  if (siteAspect != null) {
-    const isSouth = siteAspect >= 135 && siteAspect <= 225;
-    const isEastWest = (siteAspect >= 45 && siteAspect < 135) || (siteAspect > 225 && siteAspect <= 315);
-    const isNorth = siteAspect < 45 || siteAspect > 315;
-
-    if (month <= 4) {
-      // Early season
-      if (isSouth) tips.push("South-facing in April — prime timing. Soil warms first here. Start at the bottom of slopes and work up.");
-      else if (isEastWest) tips.push("East/west aspect in April — look for any south-facing micro-features (small ridges, sun-exposed cuts). These warm faster.");
-      else tips.push("North-facing in April — likely too cold still. Check back in May, or look for any south-facing pockets within the burn.");
-    } else if (month === 5) {
-      if (isSouth) tips.push("South-facing in May — peak window. Morels may already be drying out on low-elevation south faces. Check shaded edges too.");
-      else if (isEastWest) tips.push("East/west aspect in May — good timing. These slopes are warming up now. Focus on morning-sun (east) faces first.");
-      else tips.push("North-facing in May — just starting. These are often the second wave. Good time to scout.");
-    } else if (month >= 6) {
-      if (isSouth) tips.push("South-facing in June+ — likely past peak at lower elevations. Move uphill or look for late stragglers in shaded spots.");
-      else if (isEastWest) tips.push("East/west aspect in June+ — still producing at higher elevations. Look in shaded draws and near logs.");
-      else tips.push("North-facing in June+ — this is the late-season sweet spot. North aspects come on last and hold moisture longest.");
+  // Detail items
+  const siteTips = {
+    burn_age: "Months since burn. Prime: 3-8mo. Second season (9-14mo) still good. >30mo = done.",
+    burn_type: "Machine pile > wildfire > hand pile > underburn for morels.",
+    burn_acres: "Larger burns = more area to search, but morels cluster in hotspots.",
+    elevation: "Fruiting band moves uphill through the season (~300ft/month).",
+    aspect: "South-facing warms first (April). North-facing comes on last (June+).",
+    slope: "5-15 deg ideal. Flat = poor drainage. Steep = thin soil.",
+    ideal_band: "Whether this elevation is in the current seasonal fruiting band.",
+    in_season: "Morel season is April through July in the Tahoe Basin.",
+  };
+  html += `<div class="details-grid">`;
+  const siteDetails = [
+    ["burn_age", "Burn Age"], ["burn_type", "Type"], ["burn_acres", "Size"],
+    ["elevation", "Elevation"], ["aspect", "Aspect"], ["slope", "Slope"],
+    ["ideal_band", "Ideal Band"], ["in_season", "Season"],
+  ];
+  for (const [key, label] of siteDetails) {
+    if (d[key] != null) {
+      const tip = siteTips[key] ? ` title="${siteTips[key]}"` : "";
+      html += `<div class="detail-item"${tip} style="cursor:${tip ? 'help' : 'default'}"><div class="label">${label}</div><div class="value">${d[key]}</div></div>`;
     }
   }
+  html += `</div>`;
+  html += `</div>`; // end right card
 
-  // Burn type advice
-  const bType = (burn.burn_type || "").toLowerCase();
-  if (bType.includes("machine pile")) {
-    tips.push("Machine pile burn — look for distinct pile scars (blackened circles 3-10ft across). Morels cluster within 1-5m of each scar. Very patchy — walk pile to pile.");
-  } else if (bType.includes("hand pile")) {
-    tips.push("Hand pile burn — smaller, more numerous pile scars. Walk a grid pattern to find them. Check the edges of each scar where ash meets unburned duff.");
-  } else if (bType.includes("underburn")) {
-    tips.push("Underburn — generally low severity. Look for hotspots where fire burned deeper (around stumps, root wads, downed logs). Skip areas where duff is still intact.");
-  } else if (bType.includes("wildfire")) {
-    tips.push("Wildfire — severity varies widely. Focus on areas with moderate burn: dead standing trees but not moonscaped. Avoid both unburned patches and fully scorched zones.");
-  }
+  html += `</div></div>`; // end two-col, end section
 
-  // Elevation timing
-  if (siteElev > 7000 && month <= 5) {
-    tips.push("High elevation (>7000ft) in spring — snowmelt may still be happening. Come back when snow is off and soil has had 2-3 weeks to warm.");
-  } else if (siteElev < 5000 && month >= 6) {
-    tips.push("Low elevation (<5000ft) in summer — likely too hot and dry. Season may be over here.");
-  }
+  // ════════════════════════════════════════════════════════════════
+  // CONDITIONS — timeline, forecast, weather charts
+  // ════════════════════════════════════════════════════════════════
+  html += `<div class="section"><div class="section-title">Conditions</div>`;
 
-  if (tips.length > 0) {
-    html += `<div style="margin:8px 0;padding:10px 12px;background:#16213e;border-left:4px solid #53a8b6;border-radius:0 6px 6px 0;">`;
-    html += `<div style="font-size:12px;font-weight:bold;color:#53a8b6;margin-bottom:6px;">Where to look</div>`;
-    for (const tip of tips) {
-      html += `<div style="font-size:11px;color:#bbb;margin:4px 0;line-height:1.4;">• ${tip}</div>`;
+  // Current conditions row (for selected day)
+  const tooltips = {
+    soil_temp: "Soil temperature at 0-7cm depth. Morels need 43-58F. From Open-Meteo.",
+    d_soil_gdd: "Growing Degree Days — cumulative warmth above 32F. Literature: 365-580 GDD predicts onset.",
+    snow_status: "Snow cover status. 'Recently melted' is ideal — provides moisture as soil warms.",
+    precip_14d: "Total precipitation in the last 14 days. Rain events >0.4in are most significant.",
+    rain_events: "Count of rain events >0.4in in the last 30 days. More events = better sustained moisture.",
+  };
+  html += `<div class="details-grid" style="margin-bottom:12px;">`;
+  const wxDetails = [
+    ["soil_temp", "Soil Temp"], ["d_soil_gdd", "Soil GDD"], ["snow_status", "Snow"],
+    ["precip_14d", "Precip (14d)"], ["rain_events", "Rain Events"],
+  ];
+  for (const [key, label] of wxDetails) {
+    if (d[key] != null) {
+      const tip = tooltips[key] ? ` title="${tooltips[key]}"` : "";
+      html += `<div class="detail-item"${tip} style="cursor:${tip ? 'help' : 'default'}"><div class="label">${label}</div><div class="value">${d[key]}</div></div>`;
     }
-    html += `</div>`;
   }
+  html += `</div>`;
 
-  // Timeline strip — 44 colored blocks
+  // 44-day timeline strip with day-of-week labels
   const tl = burn.timeline || [];
   if (tl.length > 0) {
     const statusColors = { START: "#27ae60", START_GROW: "#2ecc71", GROW: "#3498db", BAD: "#e74c3c" };
-    html += `<div class="chart-card" style="grid-column:1/-1;">`;
+    html += `<div class="card">`;
     html += `<h3>44-Day Timeline — <span style="color:#27ae60">START</span> <span style="color:#3498db">GROW</span> <span style="color:#e74c3c">BAD</span></h3>`;
     html += `<div style="display:flex;gap:1px;height:24px;">`;
+    const tlRunDate = new Date(data.run_date + "T12:00:00");
     for (let i = 0; i < tl.length; i++) {
       const c = statusColors[tl[i]] || "#333";
       const isToday = i === 30;
       const border = isToday ? "outline:2px solid #e94560;" : "";
-      html += `<div style="flex:1;background:${c};border-radius:2px;${border}" title="Day ${i-30}: ${tl[i]}"></div>`;
+      const tlDate = new Date(tlRunDate);
+      tlDate.setDate(tlDate.getDate() + (i - 30));
+      const tlLabel = `${dayNames[tlDate.getDay()]} ${monthNames[tlDate.getMonth()]} ${tlDate.getDate()}: ${tl[i]}`;
+      html += `<div style="flex:1;background:${c};border-radius:2px;${border}" title="${tlLabel}"></div>`;
     }
     html += `</div>`;
-    html += `<div style="display:flex;justify-content:space-between;font-size:9px;color:#555;margin-top:2px;">`;
-    html += `<span>-30 days</span><span style="color:#e94560;">today</span><span>+7 days</span>`;
-    html += `</div></div>`;
-  }
-
-  // Date formatter (needed by phase forecast and charts below)
-  const dayNames = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
-  const monthNames = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
-  function fmtDate(dateStr, i) {
-    if (!dateStr) return i === 0 ? "Today" : `+${i}`;
-    const dt = new Date(dateStr + "T12:00:00");
-    if (i === 0) return "Today";
-    return dayNames[dt.getDay()];
-  }
-  function fmtDateLong(dateStr) {
-    if (!dateStr) return "";
-    const dt = new Date(dateStr + "T12:00:00");
-    return `${dayNames[dt.getDay()]} ${monthNames[dt.getMonth()]} ${dt.getDate()}`;
-  }
-
-  // 8-day phase forecast
-  if (burn.phase_days && burn.phase_days.length > 0) {
-    html += `<div class="chart-card" style="grid-column:1/-1;">`;
-    html += `<h3>8-Day Phase Forecast</h3>`;
-    html += `<div style="display:flex;gap:4px;">`;
-    for (let i = 0; i < burn.phase_days.length; i++) {
-      const pd2 = burn.phase_days[i];
-      const pc = phaseColors[pd2.phase] || "#888";
-      const sel = i === day;
-      html += `<div style="flex:1;padding:6px 2px;text-align:center;background:${sel ? pc+'30' : '#16213e'};border:1px solid ${sel ? pc : '#0f3460'};border-radius:4px;">`;
-      html += `<div style="font-size:10px;color:#888;">${fmtDate(burn.days[i]?.date, i)}</div>`;
-      html += `<div style="font-size:14px;font-weight:bold;color:${pc};">${pd2.readiness}</div>`;
-      html += `<div style="font-size:9px;color:${pc};">${pd2.phase}</div>`;
-      html += `<div style="font-size:9px;color:#666;">${pd2.grow_days}g</div>`;
-      html += `</div>`;
+    // Day-of-week labels at weekly intervals
+    html += `<div style="display:flex;font-size:8px;color:#555;margin-top:2px;">`;
+    for (let i = 0; i < tl.length; i++) {
+      const tlDate = new Date(tlRunDate);
+      tlDate.setDate(tlDate.getDate() + (i - 30));
+      const isMonday = tlDate.getDay() === 1;
+      const isToday = i === 30;
+      if (isToday) {
+        html += `<div style="flex:1;text-align:center;color:#e94560;font-weight:bold;">today</div>`;
+      } else if (isMonday) {
+        html += `<div style="flex:1;text-align:center;">${monthNames[tlDate.getMonth()]} ${tlDate.getDate()}</div>`;
+      } else {
+        html += `<div style="flex:1;"></div>`;
+      }
     }
     html += `</div></div>`;
   }
 
-  // (legacy 8-day bar charts removed — soil temp, moisture, GDD all visible in weather timeline below)
-
-  // ── Unified timeline charts (30-day history + 14-day forecast) ──
-  // All charts share the same 44-bar x-axis. "Today" = index 30.
+  // Weather charts (initialized after innerHTML)
   const h = burn.history || {};
-  const HIST_DAYS = 30;
-  const FC_DAYS = 14;
-  const TODAY_IDX = HIST_DAYS;  // index 30 in a 44-bar chart
-
-  // ── Chart.js: Temperature (line) and Moisture (bar) ──
-  // Build labels for 44-day timeline
+  const HIST_DAYS = 30, FC_DAYS = 14, TODAY_IDX = 30;
   const totalDays = HIST_DAYS + FC_DAYS;
-  const labels = [];
+  const labels = [];      // sparse labels for x-axis ticks
+  const fullLabels = [];  // full labels for every bar (used in tooltips)
   const runDate = new Date(data.run_date + "T12:00:00");
   for (let i = 0; i < totalDays; i++) {
     const dt = new Date(runDate);
     dt.setDate(dt.getDate() + (i - HIST_DAYS));
-    const dayName = dayNames[dt.getDay()];
     const mon = monthNames[dt.getMonth()];
+    const dayStr = `${dayNames[dt.getDay()]} ${mon} ${dt.getDate()}`;
+    fullLabels.push(i === HIST_DAYS ? `TODAY — ${dayStr}` : dayStr);
     if (i === HIST_DAYS) labels.push("TODAY");
     else if (i % 7 === 0 || i === totalDays - 1) labels.push(`${mon} ${dt.getDate()}`);
     else labels.push("");
   }
 
-  // Weather chart + warming rate chart
-  html += `<div class="chart-card" style="grid-column:1/-1;"><canvas id="weatherChart"></canvas></div>`;
-  html += `<div class="chart-card" style="grid-column:1/-1;height:300px;"><canvas id="warmingChart"></canvas></div>`;
+  html += `<div class="card" style="margin-top:8px;"><canvas id="weatherChart"></canvas></div>`;
+  html += `<div class="card" style="margin-top:8px;height:250px;"><canvas id="warmingChart"></canvas></div>`;
 
-  // We'll initialize charts after innerHTML is set (below)
+  html += `</div>`; // end conditions section
 
-  // (legacy soil deltas chart and trend box removed — warming rate visible in Chart.js bar chart above)
+  // ════════════════════════════════════════════════════════════════
+  // SCOUTING TIPS
+  // ════════════════════════════════════════════════════════════════
+  const siteSlope = burn.slope || null;
+  const siteAspect = burn.aspect != null ? burn.aspect : null;
+  const curMonth = new Date().getMonth() + 1;
+  const siteElev = burn.elevation_ft || 0;
+  const tips = [];
 
-  // Details grid
-  html += `<div class="details-grid">`;
-  const detailKeys = [
-    ["soil_temp", "Soil Temp"], ["d_soil_gdd", "Soil GDD"],
-    ["snow_status", "Snow"], ["precip_14d", "Precip (14d)"],
-    ["rain_events", "Rain Events"], ["burn_age", "Burn Age"],
-    ["burn_type", "Burn Type"], ["burn_acres", "Burn Size"],
-    ["elevation", "Elevation"], ["ideal_band", "Ideal Band"],
-    ["aspect", "Aspect (best)"], ["slope", "Slope"],
-    ["aspect_centroid", "Aspect (centroid)"], ["in_season", "In Season"],
-  ];
-  for (const [key, label] of detailKeys) {
-    if (d[key] != null) {
-      html += `<div class="detail-item"><div class="label">${label}</div><div class="value">${d[key]}</div></div>`;
+  if (siteSlope != null) {
+    if (siteSlope < 5) tips.push("Flat terrain — focus on raised areas or edges with better drainage. Avoid low spots that pool water.");
+    else if (siteSlope <= 15) tips.push("Ideal slope range (5-15 deg). Good drainage + sun exposure. Search the full slope face.");
+    else if (siteSlope <= 25) tips.push("Moderate-steep slope. Focus on benches and where the grade eases — morels cluster where debris collects.");
+    else tips.push("Steep terrain — concentrate on any benches or flat spots. Slope face is likely too thin-soiled.");
+  }
+
+  if (siteAspect != null) {
+    const isSouth = siteAspect >= 135 && siteAspect <= 225;
+    const isEastWest = (siteAspect >= 45 && siteAspect < 135) || (siteAspect > 225 && siteAspect <= 315);
+    if (curMonth <= 4) {
+      if (isSouth) tips.push("South-facing in April — prime timing. Soil warms first here. Start at the bottom and work up.");
+      else if (isEastWest) tips.push("East/west in April — look for south-facing micro-features (small ridges, sun-exposed cuts).");
+      else tips.push("North-facing in April — likely still too cold. Check back in May, or find south-facing pockets.");
+    } else if (curMonth === 5) {
+      if (isSouth) tips.push("South in May — peak window. Low-elevation south faces may already be drying out. Check shaded edges.");
+      else if (isEastWest) tips.push("East/west in May — warming up now. Focus on morning-sun (east) faces first.");
+      else tips.push("North in May — just starting. These are the second wave. Good time to scout.");
+    } else {
+      if (isSouth) tips.push("South in June+ — past peak at lower elevations. Move uphill or look for stragglers in shade.");
+      else if (isEastWest) tips.push("East/west in June+ — still producing at higher elevations. Look in shaded draws and near logs.");
+      else tips.push("North in June+ — the late-season sweet spot. North aspects come on last and hold moisture longest.");
     }
   }
-  html += `</div>`;
 
-  // Day selector — colored by phase, shows readiness
-  html += `<div style="margin:20px 0;display:flex;gap:4px;">`;
-  for (let i = 0; i < burn.days.length; i++) {
-    const dd = burn.days[i];
-    const pd3 = (burn.phase_days || [])[i] || {};
-    const sel = i === day;
-    const c = phaseColors[pd3.phase] || "#666";
-    html += `<a href="?i=${idx}&day=${i}" style="flex:1;padding:8px 4px;text-align:center;background:${sel ? c : '#16213e'};color:${sel ? 'white' : '#888'};border-radius:4px;text-decoration:none;font-size:12px;">`;
-    html += `${fmtDate(dd.date, i)}<br><b>${pd3.readiness || 0}</b>`;
-    html += `</a>`;
+  const bType = (burn.burn_type || "").toLowerCase();
+  if (bType.includes("machine pile")) {
+    tips.push("Machine pile — look for distinct pile scars (blackened circles 3-10ft). Morels cluster within 1-5m of each. Walk pile to pile.");
+  } else if (bType.includes("hand pile")) {
+    tips.push("Hand pile — smaller, more numerous scars. Walk a grid. Check edges where ash meets unburned duff.");
+  } else if (bType.includes("underburn")) {
+    tips.push("Underburn — generally low severity. Focus on hotspots around stumps, root wads, downed logs. Skip intact duff.");
+  } else if (bType.includes("wildfire")) {
+    tips.push("Wildfire — focus on moderate burn: dead standing trees but not moonscaped. Avoid unburned patches and scorched zones.");
   }
-  html += `</div>`;
 
+  if (siteElev > 7000 && curMonth <= 5) tips.push("High elevation (>7000ft) — snowmelt may still be in progress. Return when soil has had 2-3 weeks to warm.");
+  else if (siteElev < 5000 && curMonth >= 6) tips.push("Low elevation (<5000ft) in summer — may be too hot and dry. Season could be over here.");
+
+  if (tips.length > 0) {
+    html += `<div class="section"><div class="section-title">Scouting Tips</div>`;
+    html += `<div class="card" style="border-left:4px solid #53a8b6;border-radius:0 8px 8px 0;">`;
+    for (const tip of tips) {
+      html += `<div style="font-size:12px;color:#bbb;margin:5px 0;line-height:1.5;">&#x2022; ${tip}</div>`;
+    }
+    html += `</div></div>`;
+  }
+
+  // ════════════════════════════════════════════════════════════════
+  // RENDER + CHARTS
+  // ════════════════════════════════════════════════════════════════
   document.getElementById("content").innerHTML = html;
 
-  // ── Initialize combined Chart.js chart ──
+  // Chart.js — weather
   const soilHist = h.hist_soil_temp || [];
   const soilFc = h.forecast_soil_temp || [];
   const airHist = h.hist_temps_max || [];
@@ -370,32 +391,21 @@ async function init() {
   const snowPad = new Array(HIST_DAYS - 7).fill(null);
   const snowFull = [...snowPad, ...snowAll2, ...new Array(Math.max(0, totalDays - snowPad.length - snowAll2.length)).fill(null)];
 
-  // Soil warming rate — 7-day rolling average change (F/day)
-  // Compares 7-day average now vs 7-day average one week ago
   let warmingRate = null;
   if (soilAll.filter(v => v != null).length >= 14) {
     warmingRate = soilAll.map((v, i) => {
       if (i < 7) return null;
-      // Average of days i-6 to i vs days i-13 to i-7
       let recent = [], prior = [];
-      for (let j = i - 6; j <= i; j++) {
-        if (soilAll[j] != null) recent.push(soilAll[j]);
-      }
-      for (let j = i - 13; j <= i - 7; j++) {
-        if (j >= 0 && soilAll[j] != null) prior.push(soilAll[j]);
-      }
+      for (let j = i - 6; j <= i; j++) { if (soilAll[j] != null) recent.push(soilAll[j]); }
+      for (let j = i - 13; j <= i - 7; j++) { if (j >= 0 && soilAll[j] != null) prior.push(soilAll[j]); }
       if (recent.length < 3 || prior.length < 3) return null;
-      const recentAvg = recent.reduce((a,b) => a+b, 0) / recent.length;
-      const priorAvg = prior.reduce((a,b) => a+b, 0) / prior.length;
-      return +((recentAvg - priorAvg) / 7).toFixed(2);
+      return +((recent.reduce((a,b)=>a+b,0)/recent.length - prior.reduce((a,b)=>a+b,0)/prior.length) / 7).toFixed(2);
     });
   }
 
   const wxCtx = document.getElementById("weatherChart");
   if (wxCtx) {
     const datasets = [];
-
-    // Lines on left y-axis (temperature)
     if (soilAll.some(v=>v!=null)) datasets.push({
       type: "line", label: "Soil Temp (F)", data: soilAll,
       borderColor: "#8B5E3C", borderWidth: 2.5, pointRadius: 0, tension: 0.3,
@@ -406,9 +416,6 @@ async function init() {
       borderColor: "#9b59b6", borderWidth: 1.5, pointRadius: 0, tension: 0.3,
       fill: false, borderDash: [4, 2], yAxisID: "yTemp",
     });
-    // warming rate is in its own chart below
-
-    // Bars on right y-axis (moisture)
     if (precip.some(v=>v>0)) datasets.push({
       type: "bar", label: "Rain (in)", data: precipFull.map(v => v > 0 ? v : null),
       backgroundColor: "#5bc0de", borderRadius: 2, barPercentage: 0.7,
@@ -420,7 +427,6 @@ async function init() {
       borderWidth: 1, borderRadius: 2, barPercentage: 0.9,
       yAxisID: "yMoist", order: 11,
     });
-
     new Chart(wxCtx, {
       data: { labels, datasets },
       options: {
@@ -429,59 +435,32 @@ async function init() {
         plugins: {
           legend: { labels: { color: "#aaa", font: { size: 11 } } },
           title: { display: true, text: "Weather — 30-day history + 7-day forecast", color: "#aaa", font: { size: 13 } },
+          tooltip: { callbacks: { title: (items) => items.length ? fullLabels[items[0].dataIndex] || "" : "" } },
         },
         scales: {
           x: { ticks: { color: "#666", font: { size: 9 }, maxRotation: 0 }, grid: { color: "#0f3460" } },
-          yTemp: {
-            type: "linear", position: "left",
-            title: { display: true, text: "Temperature (F)", color: "#8B5E3C" },
-            ticks: { color: "#888" }, grid: { color: "#0f3460" },
-          },
-          yMoist: {
-            type: "linear", position: "right",
-            title: { display: true, text: "Precip / Snow (in)", color: "#5bc0de" },
-            ticks: { color: "#888" }, grid: { drawOnChartArea: false },
-            min: 0, max: Math.max(3, ...precipFull.filter(v=>v!=null), ...snowFull.filter(v=>v!=null)),
-          },
+          yTemp: { type: "linear", position: "left", title: { display: true, text: "Temperature (F)", color: "#8B5E3C" }, ticks: { color: "#888" }, grid: { color: "#0f3460" } },
+          yMoist: { type: "linear", position: "right", title: { display: true, text: "Precip / Snow (in)", color: "#5bc0de" }, ticks: { color: "#888" }, grid: { drawOnChartArea: false }, min: 0, max: Math.max(3, ...precipFull.filter(v=>v!=null), ...snowFull.filter(v=>v!=null)) },
         },
       },
     });
   }
 
-  // Warming rate chart (separate, compact)
   const warmCtx = document.getElementById("warmingChart");
   if (warmCtx && warmingRate && warmingRate.some(v => v != null)) {
-    // Per-bar colors: red for warming, blue for cooling
     const barColors = warmingRate.map(v =>
       v == null ? "transparent" : v >= 0 ? "rgba(233,69,96,0.8)" : "rgba(52,152,219,0.8)"
     );
     new Chart(warmCtx, {
       type: "bar",
-      data: {
-        labels,
-        datasets: [{
-          label: "F/day",
-          data: warmingRate,
-          backgroundColor: barColors,
-          borderRadius: 2,
-          barPercentage: 0.9,
-        }],
-      },
+      data: { labels, datasets: [{ label: "F/day", data: warmingRate, backgroundColor: barColors, borderRadius: 2, barPercentage: 0.9 }] },
       options: {
-        responsive: true,
-        maintainAspectRatio: false,
+        responsive: true, maintainAspectRatio: false,
         interaction: { mode: "index", intersect: false },
-        plugins: {
-          legend: { display: false },
-          title: { display: true, text: "Soil Warming Rate (F/day) — red = warming, blue = cooling", color: "#888", font: { size: 11 } },
-        },
+        plugins: { legend: { display: false }, title: { display: true, text: "Soil Warming Rate (F/day) — red = warming, blue = cooling", color: "#888", font: { size: 11 } }, tooltip: { callbacks: { title: (items) => items.length ? fullLabels[items[0].dataIndex] || "" : "" } } },
         scales: {
           x: { ticks: { color: "#666", font: { size: 8 }, maxRotation: 0 }, grid: { color: "#0f3460" } },
-          y: {
-            ticks: { color: "#888", font: { size: 9 } },
-            grid: { color: "#0f3460" },
-            min: -3, max: 3,
-          },
+          y: { ticks: { color: "#888", font: { size: 9 } }, grid: { color: "#0f3460" }, min: -3, max: 3 },
         },
       },
     });
