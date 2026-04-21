@@ -50,5 +50,5 @@
 - [x] Algo version — already reads from latest.json (set by config.py). Just needs rebuild after version bump.
 
 
-## Misc:
-- [ ] morel_basin, morel_local HTML files, pngs and morel_results.csv are still getting generated, do we need those?
+## Misc
+- [x] Removed legacy file generation (morel_basin/local HTML, PNG, CSV) — SPA only now

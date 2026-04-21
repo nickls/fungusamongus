@@ -16,14 +16,12 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timedelta
 from pathlib import Path
 
-import pandas as pd
-
 from config import (ALDER_CREEK, TAHOE_BASIN_CENTER, SEARCH_RADIUS_KM,
                     LOCAL_RADIUS_KM, CACHE_DIR, MUSHROOM_TYPES, ALGO_VERSION)
 from scoring import score_burn_site, score_burn_multiday
 from phase_scoring import (build_timeline, extract_features, classify_phase,
                            score_readiness, score_potential)
-from mapping import build_map, build_chart, print_report, rating
+from mapping import print_report, rating
 from utils.weather import get_weather
 from utils.elevation import get_elevation_ft, get_slope_aspect, get_best_aspect
 from utils.fires import get_recent_fires, get_tahoe_fuels_treatments
@@ -247,51 +245,9 @@ def main():
         lbl, _ = rating(r["result"]["total"])
         print(f"  {r['zone']['name']:40s} {r['result']['total']:3d}/100 [{lbl}]")
 
-    print_report(results, "morel")
-
-    # Step 4: Maps + outputs (dated)
+    # Step 4: Export JSON for SPA
     run_date = datetime.now().strftime("%Y-%m-%d")
-    print(f"\n[4/4] Building maps ({run_date})...")
-    morel_results = {"morel": results}
-
-    # Local map
-    local = {"morel": [r for r in results
-                       if haversine_km(r["zone"]["lat"], r["zone"]["lon"],
-                                       ALDER_CREEK[0], ALDER_CREEK[1]) <= LOCAL_RADIUS_KM]}
-    local_fires = [f for f in all_fires
-                   if f.get("centroid_lat") and f.get("centroid_lon")
-                   and haversine_km(f["centroid_lat"], f["centroid_lon"],
-                                    ALDER_CREEK[0], ALDER_CREEK[1]) <= LOCAL_RADIUS_KM]
-    m_local = build_map(local, local_fires, center=ALDER_CREEK)
-    m_local.save(f"morel_local_{run_date}.html")
-    print(f"  morel_local_{run_date}.html ({len(local['morel'])} scored burns)")
-
-    # Basin map
-    m_basin = build_map(morel_results, all_fires, center=TAHOE_BASIN_CENTER)
-    m_basin.save(f"morel_basin_{run_date}.html")
-    print(f"  morel_basin_{run_date}.html ({len(results)} scored burns)")
-
-    # Chart + CSV
-    build_chart(results, f"morel_{run_date}")
-
-    summary = []
-    for r in results[:100]:
-        lbl, _ = rating(r["result"]["total"])
-        dist = haversine_km(r["zone"]["lat"], r["zone"]["lon"],
-                            ALDER_CREEK[0], ALDER_CREEK[1])
-        summary.append({
-            "burn_name": r["zone"]["name"],
-            "lat": r["zone"]["lat"], "lon": r["zone"]["lon"],
-            "elevation_ft": r["zone"].get("elevation_ft"),
-            "dist_from_alder_mi": round(dist / 1.609, 1),
-            "total_score": r["result"]["total"], "rating": lbl,
-            **r["result"]["scores"], **r["result"]["details"],
-        })
-    if summary:
-        pd.DataFrame(summary).to_csv(f"morel_results_{run_date}.csv", index=False)
-        print(f"  morel_results_{run_date}.csv")
-
-    # JSON for SPA
+    print(f"\n[4/4] Exporting JSON ({run_date})...")
     export_json(results, all_fires, run_date)
 
     print(f"\nDone! Cache: {CACHE_DIR}/")
