@@ -1,4 +1,6 @@
-# Design: Dual Score Model — Potential vs Timing
+# Design: Dual Score Model — Potential vs Readiness
+
+**Status: IMPLEMENTED in v0.7.0** — see [ALGO.md](../../ALGO.md) and [v0.7.0](v0.7.0.md)
 
 ## Problem
 
