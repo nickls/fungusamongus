@@ -25,7 +25,7 @@
 - [ ] Chanterelle (P3 — Jul-Oct) — needs hardwood EVT codes
 
 ## Infrastructure
-- [ ] Historical JSON archival (`docs/data/history/`) for hindcast validation
+- [ ] Historical JSON archival — runs/ dir created, needs hindcast analysis tooling
 - [ ] Field report CLI (`utils/field_report.py`) for recording finds
 - [ ] Prediction vs reality comparison tool (`utils/analyze_reports.py`)
 - [ ] Multi-point aspect sampling causes slow first run (~3100 extra API calls)

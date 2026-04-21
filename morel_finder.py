@@ -161,14 +161,24 @@ def export_json(results, all_fires, run_date):
     out_dir = Path("docs/data")
     out_dir.mkdir(parents=True, exist_ok=True)
     out_path = out_dir / "latest.json"
-    out_path.write_text(json.dumps(data, indent=None, separators=(",", ":")))
+    compact = json.dumps(data, indent=None, separators=(",", ":"))
+    out_path.write_text(compact)
     size_kb = out_path.stat().st_size / 1024
 
     # History file — raw weather arrays for detail page charts
     hist_path = out_dir / "history.json"
-    hist_path.write_text(json.dumps(history_data, indent=None, separators=(",", ":")))
+    hist_compact = json.dumps(history_data, indent=None, separators=(",", ":"))
+    hist_path.write_text(hist_compact)
     hist_kb = hist_path.stat().st_size / 1024
+
+    # Archive — date-stamped copies for hindcasting
+    runs_dir = out_dir / "runs"
+    runs_dir.mkdir(exist_ok=True)
+    (runs_dir / f"{run_date}.json").write_text(compact)
+    (runs_dir / f"{run_date}_history.json").write_text(hist_compact)
+
     print(f"  docs/data/latest.json ({size_kb:.0f}KB) + history.json ({hist_kb:.0f}KB)")
+    print(f"  docs/data/runs/{run_date}.json archived")
 
 
 def gather_fire_data(center, radius_km):
