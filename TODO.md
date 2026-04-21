@@ -8,24 +8,13 @@
 - [ ] Consolidate `scoring.py` (old) + `phase_scoring.py` (new) — remove legacy code
 
 ## Data sources
-- [x] LANDFIRE EVT integrated for morel potential scoring (mixed conifer = prime)
-- [ ] LANDFIRE EVT lookup table — expand beyond 19 codes as new codes appear
+- [ ] LANDFIRE EVT lookup table — expand beyond 25 codes as new codes appear
 - [ ] LANDFIRE EVH/EVC for matsutake/porcini candidates
 - [ ] NRCS soil type data (sandy = strong indicator)
 - [ ] Burn severity (dNBR from Sentinel-2) for actual severity vs PFIRS burn type proxy
 - [ ] PFIRS auto-refresh without browser cookie
 
 ## Frontend
-- [x] Remove old 8-day mini-charts from popup (still showing legacy factor scores)
-- [x] Heatmap uses old `day.total` — switch to potential-weighted
-- [x] Detail page: clean up old score hero section, keep phase + charts
-- [x] Add Potential/Readiness explanation to sidebar
-- [x] Show scores as "/100" in popup and detail page
-- [x] Render filter slider tooltips
-- [x] Detail page: timeline strip day-of-week labels
-- [x] Detail page tooltips for GDD, burn age, aspect, etc.
-- [x] Chart tooltips show full date (was only "TODAY")
-- [x] Merged 8-day forecast + day selector into one selectable strip
 - [ ] Detail page day selection — conditions/charts should update per day (currently only hero updates)
 - [ ] Filter sliders: add "By Conditions" tab (raw soil temp, precip, snow depth ranges)
 - [ ] Static PNG map export for GitHub Pages
@@ -43,12 +32,4 @@
 - [ ] Weather cache invalidation — clear only weather, not elevation/terrain
 
 ## Documentation
-- [x] ALGO.md updated for v0.7.0
-- [x] reference/algo/v0.7.0.md snapshot
 - [ ] README.md scoring section still references old model — needs update
-- [x] CLAUDE.md architecture section needs phase_scoring.py added
-- [x] Algo version — already reads from latest.json (set by config.py). Just needs rebuild after version bump.
-
-
-## Misc
-- [x] Removed legacy file generation (morel_basin/local HTML, PNG, CSV) — SPA only now
