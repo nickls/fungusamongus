@@ -2,8 +2,8 @@ name: Daily Score Update
 
 on:
   schedule:
-    # Daily at 6am Pacific (1pm UTC), April through October only
-    - cron: '0 13 * 4-10 *'
+    # Daily at 6am Pacific (1pm UTC), morel season only
+    - cron: '0 13 * 4-7 *'
   workflow_dispatch:  # manual trigger year-round
 
 permissions:
