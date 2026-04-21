@@ -46,7 +46,7 @@ utils/
 
 ## Bump the version
 
-After meaningful scoring changes, bump `ALGO_VERSION` in `config.py`. This shows on the map legend so you can tell which algorithm produced which map.
+After meaningful scoring changes, bump `ALGO_VERSION` in `config.py`. This shows on the map legend so you can tell which algorithm produced which map. Also create an annotated git tag: `git tag -a v0.X.Y -m "description"`.
 
 ## Data refresh
 

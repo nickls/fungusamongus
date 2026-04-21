@@ -7,7 +7,11 @@ To experiment with different scoring algorithms:
   3. Run: python morel_finder.py --config config_experimental.py
 """
 
-ALGO_VERSION = "0.7.0"
+ALGO_VERSION = "0.7.1"
+# 0.7.1 — LANDFIRE EVT vegetation scoring (15pts in potential), burn type fix
+#          (machine pile > wildfire > hand pile > underburn), UI clarity pass,
+#          vegetation overlay + legend, detail page "Where to look" recommendations,
+#          first field report (T27 underburn — negative)
 # 0.1.0 — Fixed zone scoring with fire proximity
 # 0.2.0 — Burn-location-based scoring, PFIRS integration
 # 0.3.0 — Moisture gate / soil temp trigger model, warming trend detection,

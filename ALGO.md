@@ -15,11 +15,12 @@ See also: [Predictive Modeling Research](reference/predictive-modeling-for-burn-
 | 0.5.0 | 2026-04-20 | 6-factor model, per-day scoring, SPA, 59 tests | [v0.5.0](reference/algo/v0.5.0.md) |
 | 0.6.0 | 2026-04-20 | Soil GDD, historical soil temp, multi-point aspect, rain events | [v0.6.0](reference/algo/v0.6.0.md) |
 | 0.6.1 | 2026-04-20 | Cooling trend penalty on GDD, freeze damage detection | |
-| **0.7.0** | **2026-04-20** | **Phase-based model: Potential + Readiness replaces single score** | **[v0.7.0](reference/algo/v0.7.0.md)** |
+| 0.7.0 | 2026-04-20 | Phase-based model: Potential + Readiness replaces single score | [v0.7.0](reference/algo/v0.7.0.md) |
+| **0.7.1** | **2026-04-21** | **LANDFIRE EVT vegetation (15pts), burn type fix, field report #1** | |
 
 ---
 
-## Current Model (v0.7.0) — Phase-Based Scoring
+## Current Model (v0.7.1) — Phase-Based Scoring
 
 The v0.5/0.6 model used a single 0-100 weighted score that conflated site quality with daily weather. A burn could score 82 on a snowy day because accumulated GDD was high. Users read "82" as "go today" when it really meant "this site has good long-term conditions."
 
@@ -48,6 +49,19 @@ Burn quality recency curve:
 | 15-20 months | 20% | Declining |
 | 21-30 months | 10% | Marginal |
 | >30 months | 0% | Done — type/size bonus also zeroed |
+
+Burn type scores (fraction of burn_quality weight):
+
+| Burn Type | Score | Rationale |
+|-----------|-------|-----------|
+| **Machine pile** | 0.45 | Deep soil heating, full duff consumption, heavy ash. Highest yield but very patchy (1-5m clusters around pile scars). |
+| **Wildfire** | 0.35 | Best when moderate severity. Highly variable — needs dNBR for accurate scoring. |
+| **Hand pile** | 0.30 | Similar mechanism to machine pile but weaker intensity, smaller footprint. More numerous = better coverage. |
+| **Broadcast** | 0.25 | Moderate severity, variable results. |
+| **RX (generic)** | 0.15 | Unspecified prescribed burn — assume moderate. |
+| **Underburn** | 0.05 | Generally poor — low duff consumption, minimal soil heating, trees survive. Near-zero unless localized hotspots. |
+
+**Why this ordering:** Morels respond to duff removal + mineral soil exposure + root death + reduced microbial competition. Machine pile > hand pile > underburn in all three variables. Confirmed by T27 field report (underburn, no morels despite "good" weather scores).
 
 Vegetation type suitability (from LANDFIRE LF2024 EVT via ImageServer identify):
 
@@ -146,11 +160,21 @@ Key findings from peer-reviewed studies (full review: [reference/predictive-mode
 
 ## What the Model Does NOT Capture
 
-- **Vegetation type** — ~~LANDFIRE planned~~ **Implemented** (v0.7.1). EVT from LANDFIRE LF2024 ImageServer. 15 pts in potential.
-- **Actual burn severity** — PFIRS burn type is a proxy. dNBR satellite data would be better.
+- ~~Vegetation type~~ — **Done** (v0.7.1). LANDFIRE LF2024 EVT, 15 pts in potential.
+- **Actual burn severity** — PFIRS burn type is a proxy. dNBR from Sentinel-2 would score individual burns by actual fire intensity.
 - **Soil type** — sandy/well-drained soils produce better.
 - **Surface burn fraction** — research shows no morels below 50% ground surface burned.
 - **Microsite proximity** — morels cluster within 3m of burned trunks.
 - **Access** — some burns are on private land or behind locked gates.
 - **Competition** — popular burns get picked clean.
 - **Driving time** — straight-line distance is misleading in mountains.
+
+---
+
+## Field Reports
+
+| Date | Site | Result | Key Learnings |
+|------|------|--------|---------------|
+| 2026-04-20 | T27 Underburn | **No morels** | Soil too cold (winter, not cold snap). Burn sporadic/shallow — underburn type ≠ adequate severity. Led to burn type score inversion fix. |
+
+Field reports stored in `data/field_reports.json`.
