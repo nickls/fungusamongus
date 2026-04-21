@@ -2,10 +2,9 @@ name: Daily Score Update
 
 on:
   schedule:
-    # Run twice daily: 6am and 6pm Pacific (1pm and 1am UTC)
-    - cron: '0 13 * * *'
-    - cron: '0 1 * * *'
-  workflow_dispatch:  # manual trigger
+    # Daily at 6am Pacific (1pm UTC), April through October only
+    - cron: '0 13 * 4-10 *'
+  workflow_dispatch:  # manual trigger year-round
 
 permissions:
   contents: write
