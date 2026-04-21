@@ -25,7 +25,8 @@
 - [ ] Chanterelle (P3 — Jul-Oct) — needs hardwood EVT codes
 
 ## Infrastructure
-- [ ] Historical JSON archival — runs/ dir created, needs hindcast analysis tooling
+- [ ] GH Action: extend schedule to Apr-Nov when multi-species scoring is added
+- [ ] Hindcast analysis tooling for `docs/data/runs/` archive
 - [ ] Field report CLI (`utils/field_report.py`) for recording finds
 - [ ] Prediction vs reality comparison tool (`utils/analyze_reports.py`)
 - [ ] Multi-point aspect sampling causes slow first run (~3100 extra API calls)
