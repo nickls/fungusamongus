@@ -128,16 +128,15 @@ MOREL_PROFILE = {
     # ── Burn quality sub-scoring ──
     # Recency curve: list of (max_months, fraction_of_weight)
     # Evaluated in order — first match wins
-    # CORRECTED ATTRIBUTION (2026-05-02): the 4-5lbs harvest was at Unit 2.3
-    # Underburn (6mo old, south of road, wetter), NOT Waddle Ranch RX (18mo,
-    # north, drier). Older Waddle Ranch yielded only ~2lbs of smaller morels.
-    # This supports the original prime-window curve — first season dominates.
-    # Confounding: moisture vs age — wetter site was also younger.
+    # 4-5lbs harvested at 6mo (Unit 2.3 Underburn) — solidly inside the prime
+    # window. ~2lbs at 18mo (Waddle Ranch RX) — declining, as original curve
+    # predicted. Reverted to original after misattribution was corrected on
+    # 2026-05-02. Note: moisture/age confounded across the two sites.
     "recency_curve": [
         (2,  0.30),   # 0-2 months: too fresh
-        (8,  0.50),   # 3-8 months: prime window (FR-002b: 4-5lbs at 6mo)
+        (8,  0.50),   # 3-8 months: prime window (FR-002b confirms)
         (14, 0.40),   # 9-14 months: still good
-        (20, 0.25),   # 15-20 months: declining (FR-002a: ~2lbs at 18mo)
+        (20, 0.20),   # 15-20 months: declining (FR-002a: ~2lbs at 18mo)
         (30, 0.10),   # 21-30 months: marginal
         # >30 months: 0
     ],
@@ -147,14 +146,18 @@ MOREL_PROFILE = {
     # Machine pile = deep soil heating, full duff consumption → strongest trigger but patchy.
     # Hand pile = similar but weaker, smaller footprint, more numerous.
     # Underburn = generally poor — low duff consumption, minimal soil heating, trees survive.
+    # Field validation 2026-05-02: Unit 2.3 underburn produced 4-5lbs at 6mo
+    # (FR-002b). Underburns are highly severity-dependent — ranges from FR-001
+    # (T27 "patchy, shallow", 0 morels) to FR-002b (4-5lbs). Without dNBR
+    # severity data we treat them as moderate-uncertain.
     "burn_type_scores": {
-        "machine pile": 0.45,  # highest yield potential, very localized microclusters
-        "hand pile": 0.30,     # moderate probability, better spatial coverage
+        "machine pile": 0.45,  # deepest soil heating, highest single-yield potential
+        "hand pile": 0.30,     # moderate severity, broader spatial coverage
         "pile": 0.30,          # generic pile = assume hand pile
-        "broadcast": 0.25,     # moderate severity, variable
-        "rx_generic": 0.15,    # unspecified RX — assume moderate
-        "wildfire": 0.35,      # best when moderate severity, variable — needs dNBR to score accurately
-        "underburn": 0.05,     # near-zero unless co-occurring with high-severity patches
+        "broadcast": 0.30,     # moderate severity, variable
+        "rx_generic": 0.20,    # unspecified RX — assume moderate
+        "wildfire": 0.35,      # best when moderate severity, variable
+        "underburn": 0.25,     # variable: from 0 (T27) to 4-5lbs (Unit 2.3)
     },
     # Acreage curve: list of (min_acres, fraction)
     "acreage_curve": [

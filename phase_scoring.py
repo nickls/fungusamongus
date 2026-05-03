@@ -357,43 +357,50 @@ def score_potential(fire, elev, terrain, mushroom_type="morel", evt=None):
     scores = {}
     details = {}
 
-    # Burn quality (existing logic)
+    # Burn quality: recency is a MULTIPLIER on type + acreage (not additive).
+    # An old burn can't hide behind being a machine pile — age dominates.
     max_pts = w.get("burn_quality", 35)
-    burn_score = 0
     fire_date = fire.get("date")
     recency_curve = mt.get("recency_curve", [(2, 0.3), (8, 0.5), (14, 0.4), (20, 0.2), (30, 0.1)])
-    burn_viable = False
 
+    # Recency: yield potential as fraction of peak (0.0-1.0).
+    # The recency curve fractions are normalized so the prime bucket = 1.0.
+    peak_frac = max(f for _, f in recency_curve)  # 0.50 in default curve
+    recency_mult = 0.0
     if fire_date:
         try:
             months_ago = (datetime.now() - datetime.strptime(fire_date, "%Y-%m-%d")).days / 30
             for max_months, frac in recency_curve:
                 if months_ago <= max_months:
-                    burn_score += max_pts * frac
-                    burn_viable = True
+                    recency_mult = frac / peak_frac  # 1.0 at peak, 0.4 at 17mo, etc.
                     break
             details["burn_age"] = f"{months_ago:.0f}mo ago"
         except ValueError:
-            burn_score += max_pts * 0.1
-            burn_viable = True
+            recency_mult = 0.2
 
-    if burn_viable:
-        burn_type_str = (fire.get("pfirs_burn_type", "") or "").lower()
-        type_scores = mt.get("burn_type_scores", {})
-        matched = False
-        for key_str, frac in type_scores.items():
-            if key_str in burn_type_str:
-                burn_score += max_pts * frac
-                matched = True
-                break
-        if not matched:
-            burn_score += max_pts * (0.15 if fire.get("is_rx") else 0.10)
+    # Type + acreage: these are the "intrinsic burn quality" — what the burn
+    # is, regardless of age. Sum to max ~0.60 of weight (type 0.45 + acres 0.15).
+    intrinsic = 0.0
+    burn_type_str = (fire.get("pfirs_burn_type", "") or "").lower()
+    type_scores = mt.get("burn_type_scores", {})
+    matched = False
+    for key_str, frac in type_scores.items():
+        if key_str in burn_type_str:
+            intrinsic += frac
+            matched = True
+            break
+    if not matched:
+        intrinsic += 0.15 if fire.get("is_rx") else 0.10
 
-        acres = fire.get("acres", 0)
-        for min_acres, frac in mt.get("acreage_curve", [(20, 0.15), (5, 0.1), (0, 0.05)]):
-            if acres >= min_acres:
-                burn_score += max_pts * frac
-                break
+    acres = fire.get("acres", 0)
+    for min_acres, frac in mt.get("acreage_curve", [(20, 0.15), (5, 0.1), (0, 0.05)]):
+        if acres >= min_acres:
+            intrinsic += frac
+            break
+
+    # Final: intrinsic quality scaled by recency multiplier.
+    # Peak burn @ 6mo = full intrinsic. Same burn @ 17mo = 0.4x intrinsic.
+    burn_score = max_pts * intrinsic * recency_mult
 
     details["burn_type"] = fire.get("pfirs_burn_type") or ("RX" if fire.get("is_rx") else "wildfire")
     details["burn_acres"] = f"{fire.get('acres', 0):.1f}ac"

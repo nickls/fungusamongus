@@ -8,6 +8,7 @@ const FILTERS = [
   // Phase scores
   { key: "potential", label: "Min Potential", max: 100, default: 0, color: "#53a8b6", tip: "Site quality — burn recency, type, elevation, aspect." },
   { key: "readiness", label: "Min Readiness", max: 100, default: 0, color: "#e94560", tip: "How close to fruiting — start days, grow days, weather." },
+  { key: "burn_age_max", label: "Max Burn Age (mo)", max: 36, default: 36, color: "#e67e22", tip: "Hide burns older than N months. Default 36 = no limit.", mode: "max", source: "burn_age_months" },
   // Raw conditions (from legacy day scores)
   { key: "soil_threshold", label: "Min Soil Temp", max: 25, default: 0, color: "#c0392b", tip: "Filter by soil temperature score." },
   { key: "recent_moisture", label: "Min Moisture", max: 20, default: 0, color: "#2980b9", tip: "Filter by moisture score." },
@@ -142,6 +143,60 @@ function buildSliders() {
     const row = makeSlider(f.key, f.label, f.max, f.default || 0, f.tip);
     group.appendChild(row);
   }
+  group.appendChild(buildBurnTypeFilter());
+}
+
+const BURN_TYPES = ["Machine Pile", "Hand Pile", "Pile Burn", "Underburn", "Broadcast", "RX", "wildfire"];
+
+function buildBurnTypeFilter() {
+  // Initialize all enabled
+  filters.burn_types = new Set(BURN_TYPES);
+
+  const row = document.createElement("div");
+  row.className = "slider-row";
+  row.innerHTML = `<label>Burn Types <span style="font-size:10px;color:#666;">(click to toggle)</span></label>`;
+
+  const tipEl = document.createElement("div");
+  tipEl.style.cssText = "font-size:10px;color:#666;margin-top:-1px;margin-bottom:4px;";
+  tipEl.textContent = "Show only selected burn types.";
+  row.appendChild(tipEl);
+
+  const chipBox = document.createElement("div");
+  chipBox.style.cssText = "display:flex;flex-wrap:wrap;gap:4px;";
+
+  for (const t of BURN_TYPES) {
+    const chip = document.createElement("button");
+    chip.textContent = t;
+    chip.dataset.type = t;
+    chip.style.cssText = "background:#0f3460;color:#fff;border:1px solid #53a8b6;border-radius:12px;padding:3px 9px;font-size:10px;cursor:pointer;";
+    chip.classList.add("burn-chip", "active");
+    chip.onclick = () => {
+      const active = chip.classList.toggle("active");
+      if (active) {
+        chip.style.background = "#0f3460";
+        chip.style.color = "#fff";
+        filters.burn_types.add(t);
+      } else {
+        chip.style.background = "#16213e";
+        chip.style.color = "#666";
+        filters.burn_types.delete(t);
+      }
+      render();
+    };
+    chipBox.appendChild(chip);
+  }
+  row.appendChild(chipBox);
+  return row;
+}
+
+function matchesBurnType(burn) {
+  if (!filters.burn_types || filters.burn_types.size === BURN_TYPES.length) return true;  // all enabled = no filter
+  const t = burn.burn_type || "";
+  // Match against each selected type case-insensitively
+  for (const sel of filters.burn_types) {
+    if (t.toLowerCase().includes(sel.toLowerCase())) return true;
+  }
+  return false;
 }
 
 function makeSlider(key, label, max, initial, tip) {
@@ -193,6 +248,15 @@ function resetSliders() {
       if (valSpan) valSpan.textContent = `${def}/${input.max}`;
     }
   });
+
+  // Re-enable all burn type chips
+  filters.burn_types = new Set(BURN_TYPES);
+  document.querySelectorAll(".burn-chip").forEach(chip => {
+    chip.classList.add("active");
+    chip.style.background = "#0f3460";
+    chip.style.color = "#fff";
+  });
+
   render();
 }
 
@@ -243,10 +307,17 @@ function render() {
     if (potential < (filters.potential || 0)) { hidden++; continue; }
     if (readiness0 < (filters.readiness || 0)) { hidden++; continue; }
 
+    // Burn age filter (max — hide older than slider value)
+    if (filters.burn_age_max != null && burn.burn_age_months != null
+        && burn.burn_age_months > filters.burn_age_max) { hidden++; continue; }
+
+    // Burn type filter
+    if (!matchesBurnType(burn)) { hidden++; continue; }
+
     // Raw condition filters (from legacy day scores)
     let filtered = false;
     for (const f of FILTERS) {
-      if (f.key === "potential" || f.key === "readiness") continue;
+      if (f.key === "potential" || f.key === "readiness" || f.key === "burn_age_max") continue;
       if (filters[f.key] && day[f.key] != null && day[f.key] < filters[f.key]) {
         filtered = true;
         break;

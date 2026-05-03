@@ -169,6 +169,14 @@ def export_json(results, run_date):
         tl = r.get("timeline", [])
         tl_reasons = r.get("timeline_reasons", [])
 
+        # Compute burn age in months for filter
+        burn_age_months = None
+        if f.get("date"):
+            try:
+                burn_age_months = round((today - datetime.strptime(f["date"], "%Y-%m-%d")).days / 30, 1)
+            except (ValueError, TypeError):
+                pass
+
         data["burns"].append({
             "slug": f.get("slug", ""),
             "name": z["name"],
@@ -177,6 +185,7 @@ def export_json(results, run_date):
             "acres": f.get("acres", 0),
             "burn_type": f.get("pfirs_burn_type", "") or ("RX" if f.get("is_rx") else "wildfire"),
             "burn_date": f.get("date", ""),
+            "burn_age_months": burn_age_months,
             "elevation_ft": z.get("elevation_ft"),
             "slope": z.get("slope"),
             "aspect": z.get("aspect"),
