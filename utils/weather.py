@@ -103,5 +103,9 @@ def get_weather(lat: float, lon: float) -> dict[str, Any]:
     if forecast and "current_weather" in forecast:
         result["current_temp"] = forecast["current_weather"].get("temperature")
 
-    cache_set(key, result)
+    # Only cache if we got both halves — partial responses (e.g. from 429s)
+    # would otherwise get stuck in cache for the full TTL, leaving sites
+    # stuck at readiness 0 until manual cache eviction.
+    if result["hist_soil_temp"] and result["forecast_soil_temp"]:
+        cache_set(key, result)
     return result

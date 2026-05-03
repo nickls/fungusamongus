@@ -7,7 +7,10 @@ Morel mushroom foraging recommender for the Greater Tahoe Basin. Scores burn sit
 ## Architecture
 
 ```
-morel_finder.py    # Runner/orchestrator (~180 lines)
+build_sites.py     # Manual rebuild of data/sites.json (fire + elevation + slope + EVT)
+morel_finder.py    # Daily runner — reads sites.json, fetches weather, scores
+data/sites.json    # CHECKED IN. Static catalog: location, elevation, slope, aspect, EVT
+data/field_reports.json  # CHECKED IN. Real harvest data (ground truth for model)
 config.py          # ALL scoring parameters — weights, thresholds, curves
 phase_scoring.py   # v0.7.0 phase model — classify_day, build_timeline, score_potential/readiness
 scoring.py         # Legacy v0.6 scoring engine (kept for backward compat, pending consolidation)
@@ -37,6 +40,68 @@ utils/
 - **PFIRS is the highest-signal fire source** — small prescribed burns (5-50ac) are the best morel habitat and only exist in PFIRS. MTBS, WFIGS, CAL FIRE all miss them.
 - **All scoring params live in config.py** — to experiment with different algorithms, copy config.py, adjust weights/curves, run with --config.
 
+## Operating principles
+
+These are non-negotiable rules learned the hard way:
+
+### 1. Save ALL non-changing or slow-changing data — and check it in
+
+Anything that doesn't change between runs (fire site locations, elevation,
+slope, aspect, vegetation type, burn date, acres) lives in
+`data/sites.json` and is committed to git. The daily run only fetches
+weather. We do NOT re-query USGS / LANDFIRE / NIFC every run.
+
+If you discover another slow-changing data source (soil type, watershed,
+land ownership, road network), add it to `build_sites.py`'s enrichment
+step and persist it in `sites.json`.
+
+Why: USGS 504s constantly, LANDFIRE is slow, GH Action minutes are
+finite. Re-fetching geological constants every day is waste, hides
+bugs (sites silently disappearing), and burns API quota.
+
+### 2. Filter LATE — gather wide, narrow in the UI
+
+Pull MORE data than you think you need at the source layer:
+
+- PFIRS: scrape from `01/01/2023` (NOT current year), even if we only
+  expect to score recent burns
+- NIFC + Tahoe Fuels: 4-year window (NOT 3) — prevents losing edge cases
+- Wildfires: included in catalog, NOT filtered out at the build step
+- Burn types: ALL of them in the catalog — Underburn, Hand Pile, Machine
+  Pile, Broadcast, RX-generic, wildfire
+
+Filtering belongs in the UI (sliders, type chips, age filter), NOT in
+the data pipeline. The user changes their mind about what's interesting;
+the catalog should support them without a re-scrape.
+
+Past failure: the 2024 Waddle Ranch RX got dropped from the catalog when
+PFIRS scrape was tightened to 2025+. Field report had 4-5lbs from there.
+
+### 3. The model flip-flops — distrust single-day signals
+
+The readiness regression has historically swung wildly day-to-day
+(0 → 100 → 2 across 3 consecutive runs in late April). Causes:
+
+- `is_currently_good` was binary today-only — one BAD day flipped a
+  major feature, swinging readiness ±30 points
+- `grow_days` reset to zero on a 3-day bad streak — wiped accumulated
+  biological progress
+- `extract_features` only counted GROW days AFTER a START in the 30-day
+  window — sites with continuous GROW activity but earlier-than-window
+  START got `start_days=0, grow_days=0` despite being clearly producing
+
+Current mitigations:
+- `is_currently_good` is a 5-day rolling ratio, not binary
+- `grow_days_total` (never resets) for readiness; `grow_days_since_reset`
+  for phase classification
+- `extract_features` falls back to window-onset if no START found but
+  GROW is present
+- Readiness is capped by phase: TOO_EARLY ≤ 25, WAITING ≤ 50
+
+When changing scoring: smooth over windows, prefer cumulative features,
+distrust binary today-only signals. Validate against
+`data/field_reports.json`.
+
 ## When making changes
 
 - **Changing scoring logic**: Edit `phase_scoring.py` (primary) or `scoring.py` (legacy). All thresholds come from `config.py` via the mushroom type profile. **IMPORTANT: Update ALGO.md whenever scoring logic, weights, thresholds, or factors change.** ALGO.md is the canonical documentation of how the algorithm works — it must stay in sync with the code.
@@ -65,11 +130,8 @@ After meaningful scoring changes, bump `ALGO_VERSION` in `config.py`. This shows
 ## Running
 
 ```bash
-source .venv/bin/activate
-python morel_finder.py
+source .venv/bin/activate && .venv/bin/python morel_finder.py
 ```
-
-Outputs are date-stamped: `morel_local_2026-04-19.html`, etc.
 
 ## Project management
 

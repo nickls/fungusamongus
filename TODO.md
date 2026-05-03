@@ -1,6 +1,7 @@
 # TODO
 
 ## Scoring refinements
+- [ ] **Readiness score too high for WAITING sites** — T27 shows Readiness 97/100 with only 1 grow / 2 start days and WAITING status. Readiness should reflect that conditions aren't there yet; a near-perfect score contradicts the phase classification.
 - [ ] Expand training scenarios to 100+ (currently 70) — more edge cases, field reports when available
 - [ ] Fix `growth_was_reset` positive coefficient (+0.85) — likely regression quirk
 - [ ] Consider replacing logistic regression with ordinal/ranking model for better score spread
