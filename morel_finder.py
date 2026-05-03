@@ -5,6 +5,9 @@ Morel Foraging Recommender — Burn Site Analysis
 Scores burn locations for morel foraging potential using weather,
 terrain, and fire recency data. See README.md for full methodology.
 
+Reads static site data from data/sites.json (built by build_sites.py).
+Only fetches weather per-run — everything else is pre-computed.
+
 Usage:
     python morel_finder.py                     # default config
     python morel_finder.py --config alt.py     # custom scoring config
@@ -16,17 +19,16 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timedelta
 from pathlib import Path
 
-from config import (ALDER_CREEK, TAHOE_BASIN_CENTER, SEARCH_RADIUS_KM,
-                    LOCAL_RADIUS_KM, CACHE_DIR, MUSHROOM_TYPES, ALGO_VERSION)
+from config import (ALDER_CREEK, LOCAL_RADIUS_KM, CACHE_DIR,
+                    MUSHROOM_TYPES, ALGO_VERSION)
 from scoring import score_burn_site, score_burn_multiday
 from phase_scoring import (build_timeline, extract_features, classify_phase,
                            score_readiness, score_potential)
 from mapping import print_report, rating
 from utils.weather import get_weather
-from utils.elevation import get_elevation_ft, get_slope_aspect, get_best_aspect
-from utils.fires import get_recent_fires, get_tahoe_fuels_treatments
-from utils.pfirs import load_pfirs_cache, pfirs_to_fire_records, filter_radius as pfirs_filter
-from utils.landfire import get_evt
+
+
+SITES_PATH = Path("data/sites.json")
 
 
 def haversine_km(lat1, lon1, lat2, lon2):
@@ -39,18 +41,48 @@ def haversine_km(lat1, lon1, lat2, lon2):
     return R * 2 * math.asin(math.sqrt(a))
 
 
-def score_burn(fire, mushroom_type="morel"):
-    """Fetch weather + elevation + terrain for a burn. Compute phase + legacy scores."""
-    lat = fire.get("centroid_lat")
-    lon = fire.get("centroid_lon")
-    if lat is None or lon is None:
-        return None
+def load_sites():
+    """Load the static site catalog built by build_sites.py."""
+    if not SITES_PATH.exists():
+        print(f"  ERROR: {SITES_PATH} not found. Run: python build_sites.py")
+        return []
+    data = json.loads(SITES_PATH.read_text())
+    sites = data.get("sites", [])
+    print(f"  Loaded {len(sites)} sites from {SITES_PATH} (built {data.get('generated', '?')})")
+    return sites
+
+
+def site_to_fire(site):
+    """Convert a site catalog entry back to the fire dict format used by scoring."""
+    return {
+        "name": site["name"],
+        "slug": site.get("slug", ""),
+        "source": site.get("source", ""),
+        "centroid_lat": site["lat"],
+        "centroid_lon": site["lon"],
+        "acres": site.get("acres", 0),
+        "date": site.get("date"),
+        "is_rx": site.get("is_rx", False),
+        "pfirs_burn_type": site.get("burn_type", ""),
+    }
+
+
+def score_site(site, mushroom_type="morel"):
+    """Fetch weather and compute scores for a site from the catalog."""
+    lat, lon = site["lat"], site["lon"]
     weather = get_weather(lat, lon)
-    elev = get_elevation_ft(lat, lon)
-    terrain = get_best_aspect(lat, lon)
-    evt = get_evt(lat, lon)
-    name = fire.get("name", "?")
-    zone = {"name": name, "lat": lat, "lon": lon, "elevation_ft": elev,
+
+    # Static data from catalog
+    elev = site.get("elevation_ft")
+    terrain = {"slope": site.get("slope"), "aspect": site.get("aspect")}
+    evt = {
+        "evt_code": site.get("evt_code"),
+        "evt_name": site.get("evt_name", "Unknown"),
+        "evt_suitability": site.get("evt_suitability"),
+    }
+    fire = site_to_fire(site)
+
+    zone = {"name": site["name"], "lat": lat, "lon": lon, "elevation_ft": elev,
             "slope": terrain.get("slope"), "aspect": terrain.get("aspect"),
             "evt_code": evt.get("evt_code"), "evt_name": evt.get("evt_name")}
 
@@ -60,7 +92,7 @@ def score_burn(fire, mushroom_type="morel"):
 
     # Phase scoring (v0.7.0)
     config = MUSHROOM_TYPES.get(mushroom_type, {})
-    timeline = build_timeline(weather, config)
+    timeline, reasons = build_timeline(weather, config)
     potential = score_potential(fire, elev, terrain, mushroom_type, evt=evt)
 
     phase_days = []
@@ -81,10 +113,11 @@ def score_burn(fire, mushroom_type="morel"):
 
     return {"zone": zone, "fire": fire, "weather": weather,
             "result": result, "day_scores": day_scores,
-            "potential": potential, "timeline": timeline, "phase_days": phase_days}
+            "potential": potential, "timeline": timeline,
+            "timeline_reasons": reasons, "phase_days": phase_days}
 
 
-def export_json(results, all_fires, run_date):
+def export_json(results, run_date):
     """Export scored burns as JSON for the SPA frontend."""
     today = datetime.now()
     data = {
@@ -102,12 +135,11 @@ def export_json(results, all_fires, run_date):
         for ds in r.get("day_scores", []):
             day_date = (today + timedelta(days=ds["day"])).strftime("%Y-%m-%d")
             # Prefix detail keys to avoid collision with score keys
-            # (e.g. "soil_gdd" exists in both scores and details)
             detail_items = {}
             for k, v in ds.get("details", {}).items():
                 if isinstance(v, (str, int, float)):
                     if k in ds["scores"]:
-                        detail_items["d_" + k] = v  # prefix to avoid collision
+                        detail_items["d_" + k] = v
                     else:
                         detail_items[k] = v
             days.append({
@@ -135,8 +167,10 @@ def export_json(results, all_fires, run_date):
         pot = r.get("potential", {})
         phase_days = r.get("phase_days", [])
         tl = r.get("timeline", [])
+        tl_reasons = r.get("timeline_reasons", [])
 
         data["burns"].append({
+            "slug": f.get("slug", ""),
             "name": z["name"],
             "lat": z["lat"],
             "lon": z["lon"],
@@ -151,11 +185,11 @@ def export_json(results, all_fires, run_date):
             "potential": pot.get("potential", 0),
             "potential_scores": pot.get("scores", {}),
             "timeline": tl,
+            "timeline_reasons": tl_reasons,
             "phase_days": phase_days,
             # Legacy per-day scores
             "days": days,
         })
-        # Collect history separately to keep latest.json lean
         history_data.append(history)
 
     out_dir = Path("docs/data")
@@ -181,67 +215,26 @@ def export_json(results, all_fires, run_date):
     print(f"  docs/data/runs/{run_date}.json archived")
 
 
-def gather_fire_data(center, radius_km):
-    """Fetch all fire/treatment/PFIRS data for a center point."""
-    all_fires = get_recent_fires(center[0], center[1], radius_km)
-    fuels_tx = get_tahoe_fuels_treatments(center[0], center[1], radius_km + 20)
-    all_fires.extend(fuels_tx)
-
-    pfirs_burns = load_pfirs_cache(region="all")
-    if pfirs_burns:
-        nearby_pfirs = pfirs_filter(pfirs_burns, center[0], center[1], radius_km)
-        pfirs_records = pfirs_to_fire_records(nearby_pfirs)
-        all_fires.extend(pfirs_records)
-
-    wildfire_ct = sum(1 for f in all_fires if not f.get("is_rx") and not f.get("is_treatment"))
-    rx_ct = sum(1 for f in all_fires if f.get("is_rx"))
-    tx_ct = sum(1 for f in all_fires if f.get("is_treatment") and not f.get("is_rx"))
-    print(f"  Total: {len(all_fires)} ({wildfire_ct} wildfire, {rx_ct} burns, {tx_ct} mechanical)")
-    return all_fires
-
-
-def dedupe_burns(fires, min_dist_km=0.5):
-    """Dedupe fires at essentially the same location."""
-    unique = []
-    for f in fires:
-        lat, lon = f.get("centroid_lat"), f.get("centroid_lon")
-        if lat is None or lon is None:
-            continue
-        dupe = False
-        for u in unique:
-            if haversine_km(lat, lon, u["centroid_lat"], u["centroid_lon"]) < min_dist_km:
-                if (f.get("acres", 0) > u.get("acres", 0) or
-                        (f.get("date") or "") > (u.get("date") or "")):
-                    unique.remove(u)
-                    unique.append(f)
-                dupe = True
-                break
-        if not dupe:
-            unique.append(f)
-    return unique
-
-
 def main():
     print("MOREL FORAGING — Burn Site Analysis")
     print("=" * 60)
     CACHE_DIR.mkdir(exist_ok=True)
 
-    # Step 1: Gather all fire/burn data
-    print(f"\n[1/4] Fetching fire + treatment data ({SEARCH_RADIUS_KM}km)...")
-    all_fires = gather_fire_data(ALDER_CREEK, SEARCH_RADIUS_KM)
+    # Step 1: Load site catalog
+    print(f"\n[1/3] Loading site catalog...")
+    sites = load_sites()
+    if not sites:
+        return
 
-    # Step 2: Filter to RX burns with coordinates, dedupe
-    burns_to_score = [f for f in all_fires
-                      if f.get("centroid_lat") and f.get("centroid_lon")
-                      and f.get("is_rx")]
-    burns_to_score = dedupe_burns(burns_to_score, min_dist_km=0.3)
-    print(f"\n[2/4] {len(burns_to_score)} unique burn sites to score")
+    rx = sum(1 for s in sites if s.get("is_rx"))
+    wf = len(sites) - rx
+    print(f"  {rx} RX burns, {wf} wildfires")
 
-    # Step 3: Score each burn for morels (parallel)
-    print(f"\n[3/4] Scoring burns...")
+    # Step 2: Score each site (weather only — static data from catalog)
+    print(f"\n[2/3] Scoring {len(sites)} sites (fetching weather)...")
     results = []
     with ThreadPoolExecutor(max_workers=6) as pool:
-        futures = {pool.submit(score_burn, f, "morel"): f for f in burns_to_score}
+        futures = {pool.submit(score_site, s, "morel"): s for s in sites}
         for fut in as_completed(futures):
             try:
                 r = fut.result()
@@ -255,12 +248,12 @@ def main():
         lbl, _ = rating(r["result"]["total"])
         print(f"  {r['zone']['name']:40s} {r['result']['total']:3d}/100 [{lbl}]")
 
-    # Step 4: Export JSON for SPA
+    # Step 3: Export JSON for SPA
     run_date = datetime.now().strftime("%Y-%m-%d")
-    print(f"\n[4/4] Exporting JSON ({run_date})...")
-    export_json(results, all_fires, run_date)
+    print(f"\n[3/3] Exporting JSON ({run_date})...")
+    export_json(results, run_date)
 
-    print(f"\nDone! Cache: {CACHE_DIR}/")
+    print(f"\nDone! {len(results)} sites scored.")
 
 
 if __name__ == "__main__":

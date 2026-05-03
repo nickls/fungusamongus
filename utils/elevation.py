@@ -1,17 +1,25 @@
 """USGS elevation, slope, and aspect."""
+from __future__ import annotations
 
 import math
 
 from utils.cache import cache_key, cache_get, cache_set
 from utils.http import fetch_json
-from config import CACHE_TTL_FIRE_HOURS
+
+CACHE_TTL_PERMANENT = float("inf")  # elevation/slope never change
+CACHE_TTL_RETRY = 1  # retry failed lookups after 1 hour
 
 
 def get_elevation_ft(lat: float, lon: float) -> float | None:
     key = cache_key("elev", lat=round(lat, 4), lon=round(lon, 4))
-    cached = cache_get(key, CACHE_TTL_FIRE_HOURS)
+    cached = cache_get(key, CACHE_TTL_PERMANENT)
+    if cached and cached.get("value") is not None:
+        return cached["value"]
+    # Failed lookup cached — retry after short TTL
     if cached:
-        return cached.get("value")
+        stale = cache_get(key, CACHE_TTL_RETRY)
+        if stale:
+            return None
 
     data = fetch_json("https://epqs.nationalmap.gov/v1/json", {
         "x": lon, "y": lat, "units": "Feet", "wkid": 4326,
@@ -32,9 +40,13 @@ def get_slope_aspect(lat: float, lon: float) -> dict:
     4 elevation points ~55m from center.
     """
     key = cache_key("slope", lat=round(lat, 4), lon=round(lon, 4))
-    cached = cache_get(key, CACHE_TTL_FIRE_HOURS)
-    if cached:
+    cached = cache_get(key, CACHE_TTL_PERMANENT)
+    if cached and cached.get("aspect") is not None:
         return cached
+    if cached:
+        stale = cache_get(key, CACHE_TTL_RETRY)
+        if stale:
+            return cached
 
     offset = 0.0005  # ~55m
     north = get_elevation_ft(lat + offset, lon)

@@ -1,4 +1,5 @@
 """Config-driven scoring engine for burn sites."""
+from __future__ import annotations
 
 from datetime import datetime
 

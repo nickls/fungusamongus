@@ -50,7 +50,7 @@ RATINGS = [
 ]
 
 DIAMOND_THRESHOLD = 70  # scores >= this get diamond markers
-RENDER_THRESHOLD = 50   # scores below this are hidden from map
+RENDER_THRESHOLD = 0    # show everything — filter sliders handle visibility
 
 # ── Morel scoring profile ─────────────────────────────────────────────────
 # All sub-scores are expressed as fractions (0.0-1.0) of their factor weight.
@@ -128,11 +128,16 @@ MOREL_PROFILE = {
     # ── Burn quality sub-scoring ──
     # Recency curve: list of (max_months, fraction_of_weight)
     # Evaluated in order — first match wins
+    # CORRECTED ATTRIBUTION (2026-05-02): the 4-5lbs harvest was at Unit 2.3
+    # Underburn (6mo old, south of road, wetter), NOT Waddle Ranch RX (18mo,
+    # north, drier). Older Waddle Ranch yielded only ~2lbs of smaller morels.
+    # This supports the original prime-window curve — first season dominates.
+    # Confounding: moisture vs age — wetter site was also younger.
     "recency_curve": [
         (2,  0.30),   # 0-2 months: too fresh
-        (8,  0.50),   # 3-8 months: prime window
+        (8,  0.50),   # 3-8 months: prime window (FR-002b: 4-5lbs at 6mo)
         (14, 0.40),   # 9-14 months: still good
-        (20, 0.20),   # 15-20 months: declining
+        (20, 0.25),   # 15-20 months: declining (FR-002a: ~2lbs at 18mo)
         (30, 0.10),   # 21-30 months: marginal
         # >30 months: 0
     ],

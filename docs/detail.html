@@ -65,7 +65,7 @@ const EVT_SUIT = {
 
 async function init() {
   const params = new URLSearchParams(window.location.search);
-  const idx = parseInt(params.get("i"));
+  const slug = params.get("site");
   const day = parseInt(params.get("day") || "0");
 
   let data, historyData;
@@ -81,12 +81,19 @@ async function init() {
     return;
   }
 
-  if (isNaN(idx) || idx < 0 || idx >= data.burns.length) {
+  // Look up by slug (stable), fall back to index for old links
+  let idx, burn;
+  if (slug) {
+    idx = data.burns.findIndex(b => b.slug === slug);
+    burn = idx >= 0 ? data.burns[idx] : null;
+  } else {
+    idx = parseInt(params.get("i"));
+    burn = (idx >= 0 && idx < data.burns.length) ? data.burns[idx] : null;
+  }
+  if (!burn) {
     document.getElementById("content").innerHTML = "<p>Burn not found.</p>";
     return;
   }
-
-  const burn = data.burns[idx];
   burn.history = historyData[idx] || {};
   const d = burn.days[day] || burn.days[0];
 
@@ -143,7 +150,7 @@ async function init() {
       const pd2 = burn.phase_days[i];
       const pc = PHASE_COLORS[pd2.phase] || "#888";
       const sel = i === day;
-      html += `<a href="?i=${idx}&day=${i}" style="flex:1;padding:6px 2px;text-align:center;background:${sel ? pc+'30' : '#16213e'};color:${sel ? 'white' : '#888'};border:1px solid ${sel ? pc : '#0f3460'};border-top:${sel ? '2px solid '+pc : 'none'};border-radius:0 0 6px 6px;text-decoration:none;cursor:pointer;">`;
+      html += `<a href="?site=${burn.slug}&day=${i}" style="flex:1;padding:6px 2px;text-align:center;background:${sel ? pc+'30' : '#16213e'};color:${sel ? 'white' : '#888'};border:1px solid ${sel ? pc : '#0f3460'};border-top:${sel ? '2px solid '+pc : 'none'};border-radius:0 0 6px 6px;text-decoration:none;cursor:pointer;">`;
       html += `<div style="font-size:10px;color:${sel ? '#ccc' : '#666'};">${fmtDate(burn.days[i]?.date, i)}</div>`;
       html += `<div style="font-size:16px;font-weight:bold;color:${pc};">${pd2.readiness}</div>`;
       html += `<div style="font-size:9px;color:${sel ? '#ccc' : pc};text-transform:lowercase;">${pd2.phase}</div>`;
@@ -258,6 +265,7 @@ async function init() {
 
   // 44-day timeline strip with day-of-week labels
   const tl = burn.timeline || [];
+  const tlReasons = burn.timeline_reasons || [];
   if (tl.length > 0) {
     const statusColors = { START: "#27ae60", START_GROW: "#2ecc71", GROW: "#3498db", BAD: "#e74c3c" };
     html += `<div class="card">`;
@@ -270,7 +278,8 @@ async function init() {
       const border = isToday ? "outline:2px solid #e94560;" : "";
       const tlDate = new Date(tlRunDate);
       tlDate.setDate(tlDate.getDate() + (i - 30));
-      const tlLabel = `${dayNames[tlDate.getDay()]} ${monthNames[tlDate.getMonth()]} ${tlDate.getDate()}: ${tl[i]}`;
+      const reason = tlReasons[i] ? ` — ${tlReasons[i]}` : "";
+      const tlLabel = `${dayNames[tlDate.getDay()]} ${monthNames[tlDate.getMonth()]} ${tlDate.getDate()}: ${tl[i]}${reason}`.replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
       html += `<div style="flex:1;background:${c};border-radius:2px;${border}" title="${tlLabel}"></div>`;
     }
     html += `</div>`;

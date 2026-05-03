@@ -24,78 +24,77 @@ def classify_day(soil_temp, prev_soil_temp, precip, snow_depth, had_warmth, conf
                  prev_status=None):
     """
     Classify a single day's conditions into START / START_GROW / GROW / BAD.
-
-    Args:
-        soil_temp: soil temperature (F) for this day
-        prev_soil_temp: previous day's soil temp (F), or None
-        precip: precipitation (inches) for this day
-        snow_depth: snow depth (inches) for this day
-        had_warmth: whether soil was ever >45F before this day
-        config: dict with thresholds
-        prev_status: previous day's status (for oscillation filtering)
+    Returns (status, reason) tuple.
     """
     start_min = config.get("start_soil_min", 43)
     start_max = config.get("start_soil_max", 50)
     grow_min = config.get("grow_soil_min", 45)
     grow_max = config.get("grow_soil_max", 58)
+    past_prime_max = config.get("past_prime_max", 75)
     freeze = config.get("bad_freeze_threshold", 32)
     bad_snow = config.get("bad_snow_depth", 24)
 
+    soil_str = f"{soil_temp:.0f}F" if soil_temp is not None else "?"
+
     if soil_temp is None:
-        return "BAD"
+        return "BAD", "no soil temp data"
 
     # Freeze after warmth = damage
     if soil_temp <= freeze and had_warmth:
-        return "BAD"
+        return "BAD", f"freeze damage ({soil_str} after warmth)"
 
     # Deep snowpack
     if snow_depth is not None and snow_depth > bad_snow:
-        return "BAD"
+        return "BAD", f"deep snow ({snow_depth:.0f}in)"
 
     # Too cold for anything
     if soil_temp < start_min:
-        return "BAD"
+        return "BAD", f"too cold ({soil_str}, need {start_min}F+)"
 
-    # Too hot — past prime
-    if soil_temp > grow_max:
-        return "BAD"
+    # Way too hot — truly done
+    if soil_temp > past_prime_max:
+        return "BAD", f"too hot ({soil_str}, max {past_prime_max}F)"
 
     is_warming = prev_soil_temp is not None and soil_temp > prev_soil_temp
     in_start_range = start_min <= soil_temp <= start_max
     in_grow_range = grow_min <= soil_temp <= grow_max
+    in_past_prime = grow_max < soil_temp <= past_prime_max
     has_moisture = precip > 0.1 or (snow_depth is not None and 0 < snow_depth <= bad_snow)
 
     # Anti-oscillation: if previous day was BAD and we just popped above start_min,
-    # require warming trend (not just a single day crossing). A true START needs
-    # the previous day to also be trending up, not bouncing from a crash.
+    # require warming trend (not just a single day crossing).
     recovering_from_bad = prev_status == "BAD"
 
     # START: soil warming into initiation range + moisture
-    # Also: soil already in grow range but a NEW moisture event arrives (rain trigger)
     if has_moisture:
         if in_start_range and is_warming and not recovering_from_bad:
-            return "START_GROW" if in_grow_range else "START"
+            if in_grow_range:
+                return "START_GROW", f"warming + moisture ({soil_str}, {precip:.1f}in rain)"
+            return "START", f"warming into range + moisture ({soil_str})"
         if in_grow_range and precip > 0.3:
-            # Significant rain event while in grow range = can trigger new starts
-            return "START_GROW"
+            return "START_GROW", f"rain trigger in grow range ({soil_str}, {precip:.1f}in)"
 
-    # GROW: in the sustained growth range with or without moisture
+    # GROW: in the sustained growth range
     if in_grow_range:
-        return "GROW"
+        return "GROW", f"soil in grow range ({soil_str})"
+
+    # Past prime: above grow_max but below past_prime_max
+    if in_past_prime:
+        return "GROW", f"past prime but harvestable ({soil_str})"
 
     # In start range but not warming or no moisture — marginal
     if in_start_range:
         if is_warming:
-            return "START"  # warming but dry
-        return "GROW"  # holding in range, not warming — treat as marginal grow
+            return "START", f"warming but dry ({soil_str})"
+        return "GROW", f"holding in range ({soil_str})"
 
-    return "BAD"
+    return "BAD", f"soil {soil_str} out of range"
 
 
 def build_timeline(weather, config):
     """
     Build a 44-day timeline of daily statuses from weather data.
-    Returns list of 44 status strings.
+    Returns (timeline, reasons) — both lists of 44 strings.
     """
     hist_soil = weather.get("hist_soil_temp", [])
     fc_soil = weather.get("forecast_soil_temp", [])
@@ -110,6 +109,7 @@ def build_timeline(weather, config):
     all_snow = [None] * 30 + list(fc_snow) + [None] * max(0, 44 - 30 - len(fc_snow))
 
     timeline = []
+    reasons = []
     had_warmth = False
     prev_status = None
 
@@ -122,16 +122,18 @@ def build_timeline(weather, config):
         if soil is not None and soil >= 45:
             had_warmth = True
 
-        status = classify_day(soil, prev, precip, snow if snow is not None else 0,
-                              had_warmth, config, prev_status)
+        status, reason = classify_day(soil, prev, precip, snow if snow is not None else 0,
+                                      had_warmth, config, prev_status)
         timeline.append(status)
+        reasons.append(reason)
         prev_status = status
 
     # Pad to 44 if needed
     while len(timeline) < 44:
         timeline.append("BAD")
+        reasons.append("")
 
-    return timeline
+    return timeline, reasons
 
 
 # ── Feature extraction from timeline ──
@@ -161,31 +163,48 @@ def extract_features(timeline, weather, target_day=30, config=None):
     start_days = sum(1 for i in range(start_window_begin, start_window_end + 1)
                      if i < len(timeline) and timeline[i] in ("START", "START_GROW"))
 
-    # Find first START cluster, then count GROW days after it
+    # Find first START cluster. If none in window, the START happened earlier
+    # (before our 30-day lookback) — count from beginning of window if the site
+    # has continuous GROW activity. This catches sites that warmed up before
+    # our window started (common in late spring / early summer).
     first_start = None
     for i in range(start_window_begin, min(target_day, len(timeline))):
         if timeline[i] in ("START", "START_GROW"):
             first_start = i
             break
 
-    grow_days = 0
+    # If no START in window but plenty of GROW days, treat the window
+    # beginning as the implicit start point.
+    grow_in_window = sum(1 for i in range(start_window_begin, min(target_day + 1, len(timeline)))
+                         if i < len(timeline) and timeline[i] in ("GROW", "START_GROW", "START"))
+    implicit_start = first_start is None and grow_in_window >= 7
+
+    grow_days_total = 0  # never resets — biological progress
+    grow_days = 0        # resets on bad streak — for phase classification
     current_bad_streak = 0
     longest_bad_streak = 0
     growth_reset = False
 
-    if first_start is not None:
-        for i in range(first_start, min(target_day + 1, len(timeline))):
+    count_from = first_start if first_start is not None else (start_window_begin if implicit_start else None)
+
+    if count_from is not None:
+        for i in range(count_from, min(target_day + 1, len(timeline))):
             status = timeline[i]
             if status in ("GROW", "START_GROW", "START"):
                 grow_days += 1
+                grow_days_total += 1
                 current_bad_streak = 0
             elif status == "BAD":
                 current_bad_streak += 1
                 longest_bad_streak = max(longest_bad_streak, current_bad_streak)
                 if current_bad_streak >= max_bad_streak:
                     growth_reset = True
-                    # Reset: count from after this bad streak
                     grow_days = 0
+
+    # If we used implicit start (window onset), credit start_days too —
+    # the START happened, we just didn't see it in our window.
+    if implicit_start and start_days == 0:
+        start_days = 1
 
     # Soil temp features
     hist_soil = weather.get("hist_soil_temp", [])
@@ -219,13 +238,20 @@ def extract_features(timeline, weather, target_day=30, config=None):
     snow_idx = target_day - 30
     snow_depth = fc_snow[snow_idx] if 0 <= snow_idx < len(fc_snow) else 0
 
-    # Current day status
-    current_status = timeline[target_day] if target_day < len(timeline) else "BAD"
-    is_currently_good = 1 if current_status in ("GROW", "START_GROW") else 0
+    # Smoothed "currently good" — ratio of good days in last 5 days
+    # instead of binary today-only. Prevents single bad day from
+    # crashing readiness.
+    window = 5
+    good_recent = 0
+    for i in range(max(0, target_day - window + 1), target_day + 1):
+        if i < len(timeline) and timeline[i] in ("GROW", "START_GROW"):
+            good_recent += 1
+    is_currently_good = round(good_recent / window, 2)
 
     return {
         "start_days": start_days,
-        "grow_days": grow_days,
+        "grow_days": grow_days_total,  # total for readiness
+        "grow_days_since_reset": grow_days,  # for phase classification
         "max_bad_streak": longest_bad_streak,
         "growth_was_reset": 1 if growth_reset else 0,
         "soil_avg_14d": round(soil_avg_14d, 1),
@@ -251,7 +277,7 @@ def classify_phase(features, config=None):
     min_grow = config.get("min_grow_days", 14)
 
     start = features["start_days"]
-    grow = features["grow_days"]
+    grow = features.get("grow_days_since_reset", features["grow_days"])
     reset = features["growth_was_reset"]
 
     if start >= min_start and grow >= min_grow and not reset:
@@ -289,9 +315,10 @@ READINESS_COEFFICIENTS = {
 def score_readiness(features, config=None):
     """
     Readiness score (0-100) using logistic regression coefficients
-    learned from 21 labeled scenarios.
+    learned from 70 labeled scenarios.
 
     Returns probability * 100, where probability = sigmoid(coefficients · features).
+    Capped by phase: no start days → max 25, waiting → max 50.
     """
     coefs = READINESS_COEFFICIENTS
     z = coefs["intercept"]
@@ -301,7 +328,17 @@ def score_readiness(features, config=None):
 
     # Sigmoid → probability → scale to 0-100
     prob = 1 / (1 + math.exp(-z))
-    return round(prob * 100)
+    raw = round(prob * 100)
+
+    # Cap readiness by phase — the regression doesn't weight start_days
+    # heavily enough, so warm soil with no triggering event (START) can
+    # produce high readiness despite being biologically too early.
+    phase = classify_phase(features, config)
+    if phase == "TOO_EARLY":
+        return min(raw, 25)
+    elif phase == "WAITING":
+        return min(raw, 50)
+    return raw
 
 
 def score_readiness_manual(features, config=None):

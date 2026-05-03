@@ -25,13 +25,6 @@ jobs:
           path: ~/.cache/pip
           key: pip-${{ hashFiles('requirements.txt') }}
 
-      - name: Cache API responses
-        uses: actions/cache@v4
-        with:
-          path: cache/
-          key: api-cache-${{ github.run_id }}
-          restore-keys: api-cache-
-
       - name: Install dependencies
         run: pip install -r requirements.txt
 

@@ -24,7 +24,76 @@
       "lessons": [
         "Readiness overestimated — soil still too cold from winter",
         "Underburn type label does not indicate adequate severity for morels",
-        "Burn type scores were inverted — fixed: machine pile > hand pile > underburn"
+        "Underburn productivity is HIGHLY variable — see FR-002b for opposite case"
+      ]
+    }
+  },
+  {
+    "id": "FR-002a",
+    "date": "2026-04-29",
+    "observer": "nickls",
+    "site": "Waddle Ranch RX (2024)",
+    "site_slug": "waddle-ranch-rx-2024",
+    "location": "north of fire road",
+    "lat": 39.3123,
+    "lon": -120.1036,
+    "burn_type": "RX",
+    "burn_age_months": 18,
+    "burn_date": "2024-10-15",
+    "acres": 45,
+    "elevation_ft": 6031,
+    "morels_found": "~2lbs",
+    "morel_size": "smaller",
+    "conditions": {
+      "soil_temp": "~69F",
+      "soil_trend": "warming",
+      "snow": "snow-free",
+      "slope": "3deg SW",
+      "vegetation": "Mediterranean California Mesic Mixed Conifer Forest and Woodland",
+      "moisture": "drier (vs Unit 2.3 south of road)",
+      "notes": "Older RX burn (18mo). Smaller mushrooms and fewer than the younger Unit 2.3 burn nearby. Drier conditions on this side of the fire road."
+    },
+    "model_validation": {
+      "outcome": "positive but weak",
+      "lessons": [
+        "18mo RX burns DO still produce — but at reduced quantity and size",
+        "Confirms recency curve declines after first season"
+      ]
+    }
+  },
+  {
+    "id": "FR-002b",
+    "date": "2026-04-29",
+    "observer": "nickls",
+    "site": "Unit 2.3 (Underburn)",
+    "site_slug": "unit-2-3-underburn-2025",
+    "location": "south of fire road",
+    "lat": 39.311024,
+    "lon": -120.102099,
+    "burn_type": "Underburn",
+    "burn_age_months": 6,
+    "burn_date": "2025-10-09",
+    "acres": 16.1,
+    "elevation_ft": 6069,
+    "morels_found": "4-5lbs",
+    "morel_size": "larger",
+    "conditions": {
+      "snow": "snow-free",
+      "vegetation": "Mediterranean California Mesic Mixed Conifer Forest and Woodland",
+      "moisture": "wetter (vs Waddle Ranch north of road)",
+      "notes": "YOUNGER (6mo) underburn produced 4-5lbs of larger morels — significantly more than the adjacent older RX. Wetter ground south of road. Confounding: younger AND wetter, can't isolate."
+    },
+    "model_validation": {
+      "predicted_phase": "TOO_EARLY",
+      "predicted_readiness": 9,
+      "predicted_potential": 82,
+      "actual": "PRODUCING (4-5lbs harvested)",
+      "outcome": "MODEL FAILED — false negative",
+      "lessons": [
+        "Major model bug: TOO_EARLY for site with continuous GROW activity (28+ days)",
+        "extract_features only counted GROW days after a START in window — but START happened earlier",
+        "Underburn at 6mo CAN be highly productive — burn_type_score of 0.05 is too low",
+        "Model needs to recognize sites with continuous GROW even without recent START event"
       ]
     }
   }

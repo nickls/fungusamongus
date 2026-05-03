@@ -20,6 +20,7 @@ To get a session cookie:
     3. Submit a date range query
     4. Copy the Cookie header from the request
 """
+from __future__ import annotations
 
 import json
 import math
@@ -213,7 +214,7 @@ if __name__ == "__main__":
 
     parser = argparse.ArgumentParser(description="PFIRS prescribed burn scraper")
     parser.add_argument("--fetch", action="store_true", help="Fetch fresh data from PFIRS")
-    parser.add_argument("--begin", default="01/01/2025", help="Start date MM/DD/YYYY")
+    parser.add_argument("--begin", default="01/01/2023", help="Start date MM/DD/YYYY")
     parser.add_argument("--end", default=datetime.now().strftime("%m/%d/%Y"), help="End date MM/DD/YYYY")
     parser.add_argument("--cookie", help="Browser cookie string for PFIRS session")
     parser.add_argument("--center-lat", type=float, default=39.328, help="Center latitude")

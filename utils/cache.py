@@ -1,4 +1,5 @@
 """Local JSON file cache with TTL."""
+from __future__ import annotations
 
 import hashlib
 import json

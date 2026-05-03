@@ -6,8 +6,8 @@ const BASIN_BOUNDS = [[38.5, -121.3], [39.9, -119.3]];
 
 const FILTERS = [
   // Phase scores
-  { key: "potential", label: "Min Potential", max: 100, default: 50, color: "#53a8b6", tip: "Site quality — burn recency, type, elevation, aspect." },
-  { key: "readiness", label: "Min Readiness", max: 100, default: 25, color: "#e94560", tip: "How close to fruiting — start days, grow days, weather." },
+  { key: "potential", label: "Min Potential", max: 100, default: 0, color: "#53a8b6", tip: "Site quality — burn recency, type, elevation, aspect." },
+  { key: "readiness", label: "Min Readiness", max: 100, default: 0, color: "#e94560", tip: "How close to fruiting — start days, grow days, weather." },
   // Raw conditions (from legacy day scores)
   { key: "soil_threshold", label: "Min Soil Temp", max: 25, default: 0, color: "#c0392b", tip: "Filter by soil temperature score." },
   { key: "recent_moisture", label: "Min Moisture", max: 20, default: 0, color: "#2980b9", tip: "Filter by moisture score." },
@@ -284,7 +284,7 @@ function render() {
       const potential = burn.potential || 0;
       const phaseColorMap = { EMERGING: "purple", GROWING: "green", WAITING: "orange", TOO_EARLY: "gray" };
       // Shape = potential (site quality), number inside = readiness
-      const color = phase === "EMERGING" ? "purple" : phase === "GROWING" ? "green" : "orange";
+      const color = phaseColorMap[phase] || "orange";
       const showDiamond = potential >= 70;  // good burn sites always get diamonds
 
       if (showDiamond) {
@@ -360,7 +360,7 @@ function makePopup(burn, day, burnIdx) {
 
   // Header — name links to detail page
   let html = `<div class="burn-popup" style="min-width:280px;max-width:340px;">`;
-  html += `<h3 style="margin:0 0 4px;"><a href="detail.html?i=${burnIdx}&day=${selectedDay}" style="color:inherit;text-decoration:underline;" target="_blank">${burn.name}</a></h3>`;
+  html += `<h3 style="margin:0 0 4px;"><a href="detail.html?site=${burn.slug}&day=${selectedDay}" style="color:inherit;text-decoration:underline;" target="_blank">${burn.name}</a></h3>`;
   html += `<div style="font-size:11px;color:#888;margin-bottom:6px;">`;
   html += `${(burn.acres||0).toFixed(0)}ac | ${burn.burn_type} | ${burn.elevation_ft?.toFixed(0)||"?"}ft`;
   if (burn.slope != null) html += ` | ${burn.slope.toFixed(0)}deg ${aspectDir(burn.aspect)}`;
