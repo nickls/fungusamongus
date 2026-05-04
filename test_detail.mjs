@@ -112,3 +112,40 @@ if (missing.length) {
   process.exit(1);
 }
 console.log(`✓ all expected sections present`);
+
+// ── Phase A: structural check on per-type JSON outputs ──
+// Detail page still loads latest.json (the morel alias). Phase C will switch
+// it to per-type loading. For now, just verify the per-type files exist with
+// the expected shape if the morel/porcini runs have produced them.
+function checkPerTypeJSON(label, file) {
+  const p = path.join(ROOT, "data", file);
+  if (!fs.existsSync(p)) {
+    console.log(`  (${label}: ${file} not generated yet — skip)`);
+    return;
+  }
+  const j = JSON.parse(fs.readFileSync(p, "utf8"));
+  const requiredTop = ["run_date", "algo_version", "mushroom_type", "burns"];
+  const missingTop = requiredTop.filter((k) => !(k in j));
+  if (missingTop.length) {
+    console.error(`✗ ${label}: missing top-level fields: ${missingTop.join(", ")}`);
+    process.exit(1);
+  }
+  if (!Array.isArray(j.burns) || j.burns.length === 0) {
+    console.error(`✗ ${label}: burns array empty`);
+    process.exit(1);
+  }
+  const b = j.burns[0];
+  const requiredBurn = ["slug", "name", "lat", "lon", "potential", "timeline", "phase_days"];
+  const missingBurn = requiredBurn.filter((k) => !(k in b));
+  if (missingBurn.length) {
+    console.error(`✗ ${label}: burn[0] missing fields: ${missingBurn.join(", ")}`);
+    process.exit(1);
+  }
+  if (j.mushroom_type !== label) {
+    console.error(`✗ ${label}: mushroom_type=${j.mushroom_type}, expected ${label}`);
+    process.exit(1);
+  }
+  console.log(`✓ ${label}-latest.json shape valid (${j.burns.length} sites, algo ${j.algo_version})`);
+}
+checkPerTypeJSON("morel", "morel-latest.json");
+checkPerTypeJSON("porcini", "porcini-latest.json");

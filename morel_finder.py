@@ -1,18 +1,19 @@
 #!/usr/bin/env python3
 """
-Morel Foraging Recommender — Burn Site Analysis
+Foraging Recommender — Site Analysis
 ================================================
-Scores burn locations for morel foraging potential using weather,
-terrain, and fire recency data. See README.md for full methodology.
+Scores candidate locations for mushroom foraging potential using weather,
+terrain, and (for fire-associated species) fire recency data. See README.md.
 
-Reads static site data from data/sites.json (built by build_sites.py).
-Only fetches weather per-run — everything else is pre-computed.
+Reads static site data from data/<type>_sites.json (built by build_sites.py
+or build_porcini_sites.py). Only fetches weather per-run.
 
 Usage:
-    python morel_finder.py                     # default config
-    python morel_finder.py --config alt.py     # custom scoring config
+    python morel_finder.py                            # morel (default)
+    python morel_finder.py --mushroom-type=porcini    # porcini
 """
 
+import argparse
 import json
 import math
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -28,7 +29,17 @@ from mapping import print_report, rating
 from utils.weather import get_weather
 
 
-SITES_PATH = Path("data/sites.json")
+# Per-mushroom-type site catalog. Morel uses the historical sites.json (burn
+# perimeters); other species use <type>_sites.json (e.g. porcini_sites.json
+# from build_porcini_sites.py). Falls back to sites.json so Phase A can run
+# porcini end-to-end against burn sites before its dedicated catalog exists.
+def sites_path_for(mushroom_type):
+    if mushroom_type == "morel":
+        return Path("data/sites.json")
+    type_path = Path(f"data/{mushroom_type}_sites.json")
+    if type_path.exists():
+        return type_path
+    return Path("data/sites.json")  # fallback during Phase A bringup
 
 
 def haversine_km(lat1, lon1, lat2, lon2):
@@ -41,14 +52,16 @@ def haversine_km(lat1, lon1, lat2, lon2):
     return R * 2 * math.asin(math.sqrt(a))
 
 
-def load_sites():
-    """Load the static site catalog built by build_sites.py."""
-    if not SITES_PATH.exists():
-        print(f"  ERROR: {SITES_PATH} not found. Run: python build_sites.py")
+def load_sites(mushroom_type="morel"):
+    """Load the static site catalog for the given mushroom type."""
+    path = sites_path_for(mushroom_type)
+    if not path.exists():
+        builder = "build_sites.py" if mushroom_type == "morel" else f"build_{mushroom_type}_sites.py"
+        print(f"  ERROR: {path} not found. Run: python {builder}")
         return []
-    data = json.loads(SITES_PATH.read_text())
+    data = json.loads(path.read_text())
     sites = data.get("sites", [])
-    print(f"  Loaded {len(sites)} sites from {SITES_PATH} (built {data.get('generated', '?')})")
+    print(f"  Loaded {len(sites)} sites from {path} (built {data.get('generated', '?')})")
     return sites
 
 
@@ -105,12 +118,11 @@ def score_site(site, mushroom_type="morel"):
         daily_phase.append(classify_phase(feats, config))
         daily_features.append(feats)
 
-    # Anti-whiplash ratchet: existing morels persist 7-14 days; if the site
-    # had high readiness recently, today's reading should be floored by the
-    # decayed peak. Decay 0.93/day → ~half-life of 9.5 days, matching
-    # observed field persistence of morels (rather than emergence rate).
-    DECAY = 0.93
-    LOOKBACK = 14
+    # Anti-whiplash ratchet: existing fruits persist N days; if the site had
+    # high readiness recently, today's reading is floored by the decayed peak.
+    # Decay/lookback are config-driven (morel=0.93/14d, porcini=0.95/21d).
+    DECAY = config.get("ratchet_decay", 0.93)
+    LOOKBACK = config.get("ratchet_lookback", 14)
     ratcheted_readiness = []
     for i in range(len(raw_readiness)):
         floor = 0
@@ -162,15 +174,16 @@ def score_site(site, mushroom_type="morel"):
             "days_harvestable_timeline": days_harvestable}
 
 
-def export_json(results, run_date):
-    """Export scored burns as JSON for the SPA frontend."""
+def export_json(results, run_date, mushroom_type="morel"):
+    """Export scored sites as JSON for the SPA frontend."""
     today = datetime.now()
     data = {
         "run_date": run_date,
         "algo_version": ALGO_VERSION,
+        "mushroom_type": mushroom_type,
         "center": {"lat": ALDER_CREEK[0], "lon": ALDER_CREEK[1], "name": "Alder Creek"},
         "local_radius_km": LOCAL_RADIUS_KM,
-        "burns": [],
+        "burns": [],  # historical key — kept as "burns" in the JSON for SPA backward-compat
     }
     history_data = []  # raw weather arrays, indexed same as burns
     for r in results:
@@ -251,55 +264,83 @@ def export_json(results, run_date):
 
     out_dir = Path("docs/data")
     out_dir.mkdir(parents=True, exist_ok=True)
-    out_path = out_dir / "latest.json"
     compact = json.dumps(data, indent=None, separators=(",", ":"))
-    out_path.write_text(compact)
-    size_kb = out_path.stat().st_size / 1024
-
-    # History file — raw weather arrays for detail page charts
-    hist_path = out_dir / "history.json"
     hist_compact = json.dumps(history_data, indent=None, separators=(",", ":"))
-    hist_path.write_text(hist_compact)
-    hist_kb = hist_path.stat().st_size / 1024
 
-    # Archive — date-stamped copies for hindcasting
+    # Per-type files — Phase C will switch the SPA to read these directly.
+    out_path = out_dir / f"{mushroom_type}-latest.json"
+    out_path.write_text(compact)
+    hist_path = out_dir / f"{mushroom_type}-history.json"
+    hist_path.write_text(hist_compact)
+
+    # Backward-compat: morel run also writes the legacy unprefixed filenames
+    # so the existing SPA keeps working until Phase C wires per-type loading.
+    if mushroom_type == "morel":
+        (out_dir / "latest.json").write_text(compact)
+        (out_dir / "history.json").write_text(hist_compact)
+
+    # Archive — date-stamped copies for hindcasting (per-type)
     runs_dir = out_dir / "runs"
     runs_dir.mkdir(exist_ok=True)
-    (runs_dir / f"{run_date}.json").write_text(compact)
-    (runs_dir / f"{run_date}_history.json").write_text(hist_compact)
+    (runs_dir / f"{run_date}_{mushroom_type}.json").write_text(compact)
+    (runs_dir / f"{run_date}_{mushroom_type}_history.json").write_text(hist_compact)
+    if mushroom_type == "morel":
+        # Legacy archive names — keep for hindcast tooling
+        (runs_dir / f"{run_date}.json").write_text(compact)
+        (runs_dir / f"{run_date}_history.json").write_text(hist_compact)
 
-    print(f"  docs/data/latest.json ({size_kb:.0f}KB) + history.json ({hist_kb:.0f}KB)")
-    print(f"  docs/data/runs/{run_date}.json archived")
+    size_kb = out_path.stat().st_size / 1024
+    hist_kb = hist_path.stat().st_size / 1024
+    print(f"  docs/data/{out_path.name} ({size_kb:.0f}KB) + {hist_path.name} ({hist_kb:.0f}KB)")
+    print(f"  docs/data/runs/{run_date}_{mushroom_type}.json archived")
 
 
 def main():
-    print("MOREL FORAGING — Burn Site Analysis")
+    parser = argparse.ArgumentParser(description="Mushroom foraging recommender")
+    parser.add_argument("--mushroom-type", default="morel",
+                        choices=list(MUSHROOM_TYPES.keys()),
+                        help="Which mushroom species to score (default: morel)")
+    args = parser.parse_args()
+    mushroom_type = args.mushroom_type
+    profile = MUSHROOM_TYPES[mushroom_type]
+
+    print(f"{profile['label'].upper()} — Site Analysis")
     print("=" * 60)
     CACHE_DIR.mkdir(exist_ok=True)
 
     # Step 1: Load site catalog
     print(f"\n[1/3] Loading site catalog...")
-    sites = load_sites()
+    sites = load_sites(mushroom_type)
     if not sites:
         return
 
-    rx = sum(1 for s in sites if s.get("is_rx"))
-    wf = len(sites) - rx
-    print(f"  {rx} RX burns, {wf} wildfires")
+    if profile.get("needs_fire"):
+        rx = sum(1 for s in sites if s.get("is_rx"))
+        wf = len(sites) - rx
+        print(f"  {rx} RX burns, {wf} wildfires")
 
     # Step 2: Score each site (weather only — static data from catalog)
     print(f"\n[2/3] Scoring {len(sites)} sites (fetching weather)...")
     results = []
     with ThreadPoolExecutor(max_workers=6) as pool:
-        futures = {pool.submit(score_site, s, "morel"): s for s in sites}
+        futures = {pool.submit(score_site, s, mushroom_type): s for s in sites}
         for fut in as_completed(futures):
             try:
                 r = fut.result()
-                if r and r["result"]["total"] > 0:
+                if not r:
+                    continue
+                # Keep result if EITHER legacy or phase scoring shows non-zero.
+                # Legacy scoring is morel-shaped — non-morel species often score
+                # 0 there but have valid phase potential.
+                legacy_total = r["result"]["total"]
+                phase_potential = r.get("potential", {}).get("potential", 0)
+                if legacy_total > 0 or phase_potential > 0:
                     results.append(r)
             except Exception:
                 pass
-    results.sort(key=lambda r: r["result"]["total"], reverse=True)
+    # Sort by phase potential (the v0.7+ score) with legacy total as tiebreaker.
+    results.sort(key=lambda r: (r.get("potential", {}).get("potential", 0),
+                                r["result"]["total"]), reverse=True)
 
     for r in results[:5]:
         lbl, _ = rating(r["result"]["total"])
@@ -308,7 +349,7 @@ def main():
     # Step 3: Export JSON for SPA
     run_date = datetime.now().strftime("%Y-%m-%d")
     print(f"\n[3/3] Exporting JSON ({run_date})...")
-    export_json(results, run_date)
+    export_json(results, run_date, mushroom_type)
 
     print(f"\nDone! {len(results)} sites scored.")
 

@@ -167,8 +167,17 @@ def score_burn_site(fire: dict, weather: dict, elev: float | None,
     """
     Score a burn location using the config-driven profile for mushroom_type.
     All thresholds and weights come from config.MUSHROOM_TYPES.
+
+    This is the legacy v0.6 morel-shaped scoring engine. Non-morel species use
+    phase scoring (score_potential + build_timeline) which is more biologically
+    accurate. For non-morel species we return an empty shape so the pipeline
+    keeps moving — the SPA's "days" array will be empty but timeline/potential
+    fields populate correctly.
     """
     mt = MUSHROOM_TYPES[mushroom_type]
+    if "weights" not in mt or "soil_threshold" not in mt.get("weights", {}):
+        # Non-morel-shaped species — skip legacy scoring.
+        return {"total": 0, "scores": {}, "details": {}, "mushroom_type": mushroom_type}
     w = mt["weights"]
     scores = {}
     details = {}

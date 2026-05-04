@@ -20,11 +20,16 @@ from config import MUSHROOM_TYPES
 
 # ── Daily status classification ──
 
-def classify_day(soil_temp, prev_soil_temp, precip, snow_depth, had_warmth, config,
-                 prev_status=None):
+def classify_day(soil_temp, prev_soil_temp, precip, snow_depth, had_thermal_peak,
+                 config, prev_status=None):
     """
     Classify a single day's conditions into START / START_GROW / GROW / BAD.
     Returns (status, reason) tuple.
+
+    `thermal_signal` config key controls direction: "warming" (morel, spring
+    emergence) or "cooling" (porcini, fall fruiting). For cooling-trigger
+    species, fruiting also requires `had_thermal_peak` — the soil must have
+    reached the season's warm peak before cooling can trigger fruiting.
     """
     start_min = config.get("start_soil_min", 43)
     start_max = config.get("start_soil_max", 50)
@@ -33,14 +38,17 @@ def classify_day(soil_temp, prev_soil_temp, precip, snow_depth, had_warmth, conf
     past_prime_max = config.get("past_prime_max", 75)
     freeze = config.get("bad_freeze_threshold", 32)
     bad_snow = config.get("bad_snow_depth", 24)
+    thermal_signal = config.get("thermal_signal", "warming")
+    freeze_is_bad = config.get("freeze_is_bad", True)
 
     soil_str = f"{soil_temp:.0f}F" if soil_temp is not None else "?"
 
     if soil_temp is None:
         return "BAD", "no soil temp data"
 
-    # Freeze after warmth = damage
-    if soil_temp <= freeze and had_warmth:
+    # Freeze damage — only meaningful for warming-trigger species whose
+    # primordia are killed by spring frost. Porcini tolerate light frost.
+    if freeze_is_bad and soil_temp <= freeze and had_thermal_peak:
         return "BAD", f"freeze damage ({soil_str} after warmth)"
 
     # Deep snowpack
@@ -55,23 +63,38 @@ def classify_day(soil_temp, prev_soil_temp, precip, snow_depth, had_warmth, conf
     if soil_temp > past_prime_max:
         return "BAD", f"too hot ({soil_str}, max {past_prime_max}F)"
 
-    is_warming = prev_soil_temp is not None and soil_temp > prev_soil_temp
+    if prev_soil_temp is not None:
+        is_warming = soil_temp > prev_soil_temp
+        is_cooling = soil_temp < prev_soil_temp
+    else:
+        is_warming = is_cooling = False
+    favorable_trend = is_warming if thermal_signal == "warming" else is_cooling
+    trend_word = "warming" if thermal_signal == "warming" else "cooling"
+
     in_start_range = start_min <= soil_temp <= start_max
     in_grow_range = grow_min <= soil_temp <= grow_max
     in_past_prime = grow_max < soil_temp <= past_prime_max
     has_moisture = precip > 0.1 or (snow_depth is not None and 0 < snow_depth <= bad_snow)
 
-    # Anti-oscillation: if previous day was BAD and we just popped above start_min,
-    # require warming trend (not just a single day crossing).
+    # Anti-oscillation: if previous day was BAD and we just crossed back into range,
+    # require trend confirmation (not just a single day crossing).
     recovering_from_bad = prev_status == "BAD"
 
-    # START: soil warming into initiation range + moisture
-    if has_moisture:
-        if in_start_range and is_warming and not recovering_from_bad:
+    # For cooling-trigger species, the mycelium needs heat-shock priming first.
+    # Without prior thermal peak, cool wet days are out-of-season, not fruiting.
+    season_primed = had_thermal_peak if thermal_signal == "cooling" else True
+
+    # START: soil moving in favorable direction into initiation range + moisture
+    if has_moisture and season_primed:
+        if in_start_range and favorable_trend and not recovering_from_bad:
             if in_grow_range:
-                return "START_GROW", f"warming + moisture ({soil_str}, {precip:.1f}in rain)"
-            return "START", f"warming into range + moisture ({soil_str})"
-        if in_grow_range and precip > 0.3:
+                return "START_GROW", f"{trend_word} + moisture ({soil_str}, {precip:.1f}in rain)"
+            return "START", f"{trend_word} into range + moisture ({soil_str})"
+        # Heavy-rain trigger in grow range. For warming-trigger species this
+        # works alone (rain primes the flush). For cooling-trigger species
+        # the soil must also actually be cooling — warm rain mid-summer
+        # doesn't trigger porcini.
+        if in_grow_range and precip > 0.3 and (thermal_signal == "warming" or favorable_trend):
             return "START_GROW", f"rain trigger in grow range ({soil_str}, {precip:.1f}in)"
 
     # GROW: in the sustained growth range
@@ -79,13 +102,17 @@ def classify_day(soil_temp, prev_soil_temp, precip, snow_depth, had_warmth, conf
         return "GROW", f"soil in grow range ({soil_str})"
 
     # Past prime: above grow_max but below past_prime_max
+    # Warming-trigger species taper down (still harvestable).
+    # Cooling-trigger species are waiting for the soil to cool back into range.
     if in_past_prime:
-        return "GROW", f"past prime but harvestable ({soil_str})"
+        if thermal_signal == "warming":
+            return "GROW", f"past prime but harvestable ({soil_str})"
+        return "BAD", f"too warm — waiting for cooling ({soil_str})"
 
-    # In start range but not warming or no moisture — marginal
+    # In start range but no favorable trend or no moisture — marginal
     if in_start_range:
-        if is_warming:
-            return "START", f"warming but dry ({soil_str})"
+        if favorable_trend:
+            return "START", f"{trend_word} but dry ({soil_str})"
         return "GROW", f"holding in range ({soil_str})"
 
     return "BAD", f"soil {soil_str} out of range"
@@ -108,9 +135,11 @@ def build_timeline(weather, config):
     # Snow: pad 30 nulls for history (we don't have it) + 14 forecast
     all_snow = [None] * 30 + list(fc_snow) + [None] * max(0, 44 - 30 - len(fc_snow))
 
+    thermal_peak_threshold = config.get("thermal_peak_threshold", 45)
+
     timeline = []
     reasons = []
-    had_warmth = False
+    had_thermal_peak = False
     prev_status = None
 
     for i in range(min(44, len(all_soil))):
@@ -119,11 +148,11 @@ def build_timeline(weather, config):
         precip = all_precip[i] if i < len(all_precip) else 0
         snow = all_snow[i] if i < len(all_snow) else None
 
-        if soil is not None and soil >= 45:
-            had_warmth = True
+        if soil is not None and soil >= thermal_peak_threshold:
+            had_thermal_peak = True
 
         status, reason = classify_day(soil, prev, precip, snow if snow is not None else 0,
-                                      had_warmth, config, prev_status)
+                                      had_thermal_peak, config, prev_status)
         timeline.append(status)
         reasons.append(reason)
         prev_status = status

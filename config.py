@@ -7,7 +7,14 @@ To experiment with different scoring algorithms:
   3. Run: python morel_finder.py --config config_experimental.py
 """
 
-ALGO_VERSION = "0.7.1"
+ALGO_VERSION = "0.8.0"
+# 0.8.0 — Multi-species scaffolding. Porcini biology fully wired: thermal_signal
+#          ("warming"|"cooling") in classify_day, freeze_is_bad gate, season-priming
+#          (had_thermal_peak) for cooling-trigger species, config-driven ratchet
+#          decay/lookback. Per-mushroom-type output paths (morel-latest.json,
+#          porcini-latest.json) with morel writing legacy filenames for SPA
+#          backward-compat. Phase B (porcini candidate generation) and C (SPA
+#          toggle) still pending.
 # 0.7.1 — LANDFIRE EVT vegetation scoring (15pts in potential), burn type fix
 #          (machine pile > wildfire > hand pile > underburn), UI clarity pass,
 #          vegetation overlay + legend, detail page "Where to look" recommendations,
@@ -64,6 +71,14 @@ MOREL_PROFILE = {
     "season_months": (4, 7),  # outside this range, all scores halved
     "notes": "Fire-associated. Best 3-12mo post-burn, moderate severity, "
              "after snowmelt when soil warms to 50F+.",
+
+    # ── Phase classification biology ──
+    "thermal_signal": "warming",       # spring-emergence species
+    "freeze_is_bad": True,             # primordia damaged by freeze after warmth
+    "thermal_peak_threshold": 45,      # tracks "had_warmth" in build_timeline
+    # ── Anti-whiplash ratchet ──
+    "ratchet_decay": 0.93,             # 9.5-day half-life — observed morel persistence
+    "ratchet_lookback": 14,
 
     # Factor weights (must sum to 100)
     #
@@ -214,19 +229,50 @@ MUSHROOM_TYPES = {
         "notes": "Mature conifer/hardwood forest. NOT fire-associated.",
     },
     "porcini": {
-        "label": "King Bolete / Porcini (Boletus)",
+        "label": "King Bolete / Porcini (Boletus edulis)",
         "color": "#8B4513",
         "icon": "P",
         "needs_fire": False,
-        "season_months": (6, 10),
-        "weights": {"temperature": 25, "moisture": 30, "elevation": 20, "forest_maturity": 25},
+        "season_months": (7, 11),  # July through November in Sierra
+        "notes": "Mycorrhizal with mature conifers (red fir, mixed conifer, Jeffrey "
+                 "pine). Fall-fruiting — triggered by cooling soils + sustained "
+                 "moisture after late-summer warmth. Flushes last weeks, not days.",
+
+        # ── Phase classification biology (cooling-trigger) ──
+        "thermal_signal": "cooling",       # vs morel "warming"
+        "freeze_is_bad": False,            # tolerate light frost; freeze isn't damage
+        "thermal_peak_threshold": 60,      # need to hit 60F+ during the season
+        "start_soil_min": 50,              # too cold below this
+        "start_soil_max": 60,              # cooling INTO this range triggers START
+        "grow_soil_min": 50,
+        "grow_soil_max": 65,               # above 65F = too hot for fruiting
+        "past_prime_max": 70,              # above 70F = season over
+        "bad_freeze_threshold": 25,        # hard freeze; lower than morel's 32F
+        "bad_snow_depth": 12,              # less snow tolerance than morel
+
+        # ── Anti-whiplash ratchet (longer persistence than morel) ──
+        "ratchet_decay": 0.95,             # vs morel 0.93 — flushes last weeks
+        "ratchet_lookback": 21,            # vs morel 14
+
+        # ── Potential factor weights (must sum to 100) ──
+        # No burn_quality (mycorrhizal, gated by needs_fire=False).
+        # Vegetation dominates — porcini are obligate symbionts with conifers.
+        "potential_weights": {
+            "burn_quality": 0,
+            "vegetation": 50,
+            "elevation": 25,
+            "aspect": 5,
+            "season": 20,
+            "freeze_damage": 0,
+        },
+
+        # ── Air temp ranges (proxy, low weight) ──
         "temp_ideal_high": (60, 80),
         "temp_ok_high": (50, 90),
         "temp_ideal_low": (40, 55),
         "soil_temp_ideal": (50, 65),
         "elev_base": 5000,
         "elev_range": 3000,
-        "notes": "Mycorrhizal with conifers. Needs rain events + warm days.",
     },
     "matsutake": {
         "label": "Matsutake (Tricholoma)",
