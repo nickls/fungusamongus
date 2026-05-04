@@ -280,6 +280,23 @@ body {
   height: 100vh;
 }
 
+/* Locate-me control button */
+.locate-btn {
+  display: block;
+  width: 30px;
+  height: 30px;
+  background: #fff;
+  color: #333;
+  font-size: 20px;
+  line-height: 30px;
+  text-align: center;
+  text-decoration: none;
+  cursor: pointer;
+}
+.locate-btn:hover { background: #f4f4f4; }
+.locate-btn-loading { color: #1e90ff; animation: locate-pulse 1s infinite; }
+@keyframes locate-pulse { 50% { opacity: 0.4; } }
+
 /* Popup — Leaflet overrides for wider popups */
 .leaflet-popup-content-wrapper {
   border-radius: 8px !important;

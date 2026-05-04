@@ -8,7 +8,7 @@ const FILTERS = [
   // Phase scores
   { key: "potential", label: "Min Potential", max: 100, default: 0, color: "#53a8b6", tip: "Site quality — burn recency, type, elevation, aspect." },
   { key: "readiness", label: "Min Readiness", max: 100, default: 0, color: "#e94560", tip: "How close to fruiting — start days, grow days, weather." },
-  { key: "burn_age_max", label: "Max Burn Age (mo)", max: 36, default: 36, color: "#e67e22", tip: "Hide burns older than N months. Default 36 = no limit.", mode: "max", source: "burn_age_months" },
+  { key: "burn_age_max", label: "Max Burn Age (mo)", max: 36, default: 18, color: "#e67e22", tip: "Hide burns older than N months. 36 = no limit.", mode: "max", source: "burn_age_months" },
   // Raw conditions (from legacy day scores)
   { key: "soil_threshold", label: "Min Soil Temp", max: 25, default: 0, color: "#c0392b", tip: "Filter by soil temperature score." },
   { key: "recent_moisture", label: "Min Moisture", max: 20, default: 0, color: "#2980b9", tip: "Filter by moisture score." },
@@ -50,6 +50,10 @@ async function init() {
     attribution: "Esri",
     maxZoom: 18,
   });
+  const esriSat = L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}", {
+    attribution: "Esri, Maxar, Earthstar Geographics",
+    maxZoom: 18,
+  });
   esriTopo.addTo(map);
 
   // LANDFIRE EVT vegetation overlay (ArcGIS ImageServer — needs bbox per tile)
@@ -71,10 +75,56 @@ async function init() {
   });
 
   L.control.layers(
-    {"Esri Topo": esriTopo, "CARTO": carto},
+    {"Esri Topo": esriTopo, "Satellite": esriSat, "CARTO": carto},
     {"Vegetation (LANDFIRE)": landfireEVT},
     {position: "topright"}
   ).addTo(map);
+
+  // Locate-me control (top-left, under the zoom buttons)
+  const LocateControl = L.Control.extend({
+    options: { position: "topleft" },
+    onAdd: function() {
+      const container = L.DomUtil.create("div", "leaflet-bar leaflet-control");
+      const btn = L.DomUtil.create("a", "locate-btn", container);
+      btn.href = "#";
+      btn.title = "Show my location";
+      btn.innerHTML = "&#9678;";
+      L.DomEvent.on(btn, "click", (e) => {
+        L.DomEvent.preventDefault(e);
+        L.DomEvent.stopPropagation(e);
+        btn.classList.add("locate-btn-loading");
+        map.locate({ setView: true, maxZoom: 13, enableHighAccuracy: true, timeout: 10000 });
+      });
+      L.DomEvent.disableClickPropagation(container);
+      return container;
+    },
+  });
+  new LocateControl().addTo(map);
+
+  let locateMarker = null;
+  let locateCircle = null;
+  map.on("locationfound", (e) => {
+    document.querySelector(".locate-btn")?.classList.remove("locate-btn-loading");
+    if (locateMarker) map.removeLayer(locateMarker);
+    if (locateCircle) map.removeLayer(locateCircle);
+    locateCircle = L.circle(e.latlng, {
+      radius: e.accuracy,
+      color: "#1e90ff",
+      weight: 1,
+      fillOpacity: 0.1,
+    }).addTo(map);
+    locateMarker = L.circleMarker(e.latlng, {
+      radius: 6,
+      color: "#fff",
+      weight: 2,
+      fillColor: "#1e90ff",
+      fillOpacity: 1,
+    }).addTo(map);
+  });
+  map.on("locationerror", (e) => {
+    document.querySelector(".locate-btn")?.classList.remove("locate-btn-loading");
+    alert("Couldn't get your location: " + e.message);
+  });
 
   // Show/hide veg legend when overlay is toggled
   map.on("overlayadd", (e) => {
@@ -148,9 +198,15 @@ function buildSliders() {
 
 const BURN_TYPES = ["Machine Pile", "Hand Pile", "Pile Burn", "Underburn", "Broadcast", "RX", "wildfire"];
 
+function setChipActive(chip, active) {
+  chip.classList.toggle("active", active);
+  chip.style.background = active ? "#0f3460" : "#16213e";
+  chip.style.color = active ? "#fff" : "#666";
+}
+
 function buildBurnTypeFilter() {
-  // Initialize all enabled
-  filters.burn_types = new Set(BURN_TYPES);
+  // Default: "All" selected, no specific types
+  filters.burn_types = new Set();
 
   const row = document.createElement("div");
   row.className = "slider-row";
@@ -164,22 +220,38 @@ function buildBurnTypeFilter() {
   const chipBox = document.createElement("div");
   chipBox.style.cssText = "display:flex;flex-wrap:wrap;gap:4px;";
 
+  // "All" chip — mutually exclusive with the specific-type chips
+  const allChip = document.createElement("button");
+  allChip.textContent = "All";
+  allChip.dataset.type = "__all__";
+  allChip.style.cssText = "border:1px solid #53a8b6;border-radius:12px;padding:3px 9px;font-size:10px;cursor:pointer;";
+  allChip.classList.add("burn-chip");
+  setChipActive(allChip, true);
+  allChip.onclick = () => {
+    if (allChip.classList.contains("active")) return;  // already on, no-op
+    setChipActive(allChip, true);
+    filters.burn_types.clear();
+    chipBox.querySelectorAll(".burn-chip[data-type]:not([data-type='__all__'])").forEach(c => setChipActive(c, false));
+    render();
+  };
+  chipBox.appendChild(allChip);
+
   for (const t of BURN_TYPES) {
     const chip = document.createElement("button");
     chip.textContent = t;
     chip.dataset.type = t;
-    chip.style.cssText = "background:#0f3460;color:#fff;border:1px solid #53a8b6;border-radius:12px;padding:3px 9px;font-size:10px;cursor:pointer;";
-    chip.classList.add("burn-chip", "active");
+    chip.style.cssText = "border:1px solid #53a8b6;border-radius:12px;padding:3px 9px;font-size:10px;cursor:pointer;";
+    chip.classList.add("burn-chip");
+    setChipActive(chip, false);
     chip.onclick = () => {
-      const active = chip.classList.toggle("active");
+      const active = !chip.classList.contains("active");
+      setChipActive(chip, active);
       if (active) {
-        chip.style.background = "#0f3460";
-        chip.style.color = "#fff";
         filters.burn_types.add(t);
+        setChipActive(allChip, false);
       } else {
-        chip.style.background = "#16213e";
-        chip.style.color = "#666";
         filters.burn_types.delete(t);
+        if (filters.burn_types.size === 0) setChipActive(allChip, true);
       }
       render();
     };
@@ -190,9 +262,8 @@ function buildBurnTypeFilter() {
 }
 
 function matchesBurnType(burn) {
-  if (!filters.burn_types || filters.burn_types.size === BURN_TYPES.length) return true;  // all enabled = no filter
+  if (!filters.burn_types || filters.burn_types.size === 0) return true;  // "All" mode
   const t = burn.burn_type || "";
-  // Match against each selected type case-insensitively
   for (const sel of filters.burn_types) {
     if (t.toLowerCase().includes(sel.toLowerCase())) return true;
   }
@@ -249,12 +320,10 @@ function resetSliders() {
     }
   });
 
-  // Re-enable all burn type chips
-  filters.burn_types = new Set(BURN_TYPES);
+  // Reset burn-type chips: only "All" active
+  filters.burn_types = new Set();
   document.querySelectorAll(".burn-chip").forEach(chip => {
-    chip.classList.add("active");
-    chip.style.background = "#0f3460";
-    chip.style.color = "#fff";
+    setChipActive(chip, chip.dataset.type === "__all__");
   });
 
   render();
