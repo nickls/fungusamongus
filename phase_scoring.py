@@ -2,7 +2,7 @@
 Phase-based scoring model (v0.7.0).
 
 Replaces the single weighted score with a biological model:
-- Each day is classified as START / START_GROW / GROW / BAD
+- Each day is classified as START / START_GROW / GROW / PAST_PRIME / BAD
 - Readiness is computed from a rolling window: enough START days + enough GROW days
 - Potential is site quality (burn, elevation, aspect)
 
@@ -23,8 +23,13 @@ from config import MUSHROOM_TYPES
 def classify_day(soil_temp, prev_soil_temp, precip, snow_depth, had_thermal_peak,
                  config, prev_status=None):
     """
-    Classify a single day's conditions into START / START_GROW / GROW / BAD.
-    Returns (status, reason) tuple.
+    Classify a single day's conditions into START / START_GROW / GROW /
+    PAST_PRIME / BAD. Returns (status, reason) tuple.
+
+    PAST_PRIME = soil above grow_max but below past_prime_max. For warming-
+    trigger species (morel) the flush is declining but still harvestable.
+    For cooling-trigger species (porcini) we instead return BAD — they are
+    waiting for the soil to cool back into range.
 
     `thermal_signal` config key controls direction: "warming" (morel, spring
     emergence) or "cooling" (porcini, fall fruiting). For cooling-trigger
@@ -102,11 +107,11 @@ def classify_day(soil_temp, prev_soil_temp, precip, snow_depth, had_thermal_peak
         return "GROW", f"soil in grow range ({soil_str})"
 
     # Past prime: above grow_max but below past_prime_max
-    # Warming-trigger species taper down (still harvestable).
+    # Warming-trigger species taper down (still harvestable, declining yield).
     # Cooling-trigger species are waiting for the soil to cool back into range.
     if in_past_prime:
         if thermal_signal == "warming":
-            return "GROW", f"past prime but harvestable ({soil_str})"
+            return "PAST_PRIME", f"past prime — declining ({soil_str})"
         return "BAD", f"too warm — waiting for cooling ({soil_str})"
 
     # In start range but no favorable trend or no moisture — marginal
@@ -203,9 +208,10 @@ def extract_features(timeline, weather, target_day=30, config=None):
             break
 
     # If no START in window but plenty of GROW days, treat the window
-    # beginning as the implicit start point.
+    # beginning as the implicit start point. PAST_PRIME days count too —
+    # a site declining from peak still had a START before the window.
     grow_in_window = sum(1 for i in range(start_window_begin, min(target_day + 1, len(timeline)))
-                         if i < len(timeline) and timeline[i] in ("GROW", "START_GROW", "START"))
+                         if i < len(timeline) and timeline[i] in ("GROW", "START_GROW", "START", "PAST_PRIME"))
     implicit_start = first_start is None and grow_in_window >= 7
 
     grow_days_total = 0  # never resets — biological progress
@@ -219,7 +225,10 @@ def extract_features(timeline, weather, target_day=30, config=None):
     if count_from is not None:
         for i in range(count_from, min(target_day + 1, len(timeline))):
             status = timeline[i]
-            if status in ("GROW", "START_GROW", "START"):
+            if status in ("GROW", "START_GROW", "START", "PAST_PRIME"):
+                # PAST_PRIME counts as biological growth (still harvestable),
+                # just declining — the regression-friendly penalty is applied
+                # via past_prime_recent below.
                 grow_days += 1
                 grow_days_total += 1
                 current_bad_streak = 0
@@ -269,13 +278,24 @@ def extract_features(timeline, weather, target_day=30, config=None):
 
     # Smoothed "currently good" — ratio of good days in last 5 days
     # instead of binary today-only. Prevents single bad day from
-    # crashing readiness.
+    # crashing readiness. PAST_PRIME does NOT count as currently good —
+    # we want the recent surface state to reflect heat decline.
     window = 5
     good_recent = 0
     for i in range(max(0, target_day - window + 1), target_day + 1):
         if i < len(timeline) and timeline[i] in ("GROW", "START_GROW"):
             good_recent += 1
     is_currently_good = round(good_recent / window, 2)
+
+    # Past-prime recent: count of PAST_PRIME days in last 7 days.
+    # Drives the deterministic readiness taper in score_readiness — sites
+    # holding above grow_max for days drop off gradually instead of cliff-
+    # falling at past_prime_max.
+    pp_window = 7
+    past_prime_recent = sum(
+        1 for i in range(max(0, target_day - pp_window + 1), target_day + 1)
+        if i < len(timeline) and timeline[i] == "PAST_PRIME"
+    )
 
     return {
         "start_days": start_days,
@@ -290,6 +310,7 @@ def extract_features(timeline, weather, target_day=30, config=None):
         "precip_14d": round(precip_14d, 2),
         "snow_depth": round(snow_depth, 1) if snow_depth else 0,
         "is_currently_good": is_currently_good,
+        "past_prime_recent": past_prime_recent,
     }
 
 
@@ -358,6 +379,15 @@ def score_readiness(features, config=None):
     # Sigmoid → probability → scale to 0-100
     prob = 1 / (1 + math.exp(-z))
     raw = round(prob * 100)
+
+    # Past-prime taper: linear drop-off as PAST_PRIME days accumulate in
+    # the last 7 days. Catches the 58-75F band (warming-trigger species)
+    # where the regression alone shows little signal because GROW and
+    # PAST_PRIME days look identical to it. Floor at 0.30 — even a fully
+    # past-prime week shouldn't zero out a site that was clearly producing.
+    pp_recent = features.get("past_prime_recent", 0)
+    taper = max(0.30, 1.0 - 0.12 * pp_recent)
+    raw = round(raw * taper)
 
     # Cap readiness by phase — the regression doesn't weight start_days
     # heavily enough, so warm soil with no triggering event (START) can

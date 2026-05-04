@@ -229,9 +229,9 @@ async function init() {
   const tl = burn.timeline || [];
   const tlReasons = burn.timeline_reasons || [];
   if (tl.length > 0) {
-    const statusColors = { START: "#27ae60", START_GROW: "#2ecc71", GROW: "#3498db", BAD: "#e74c3c" };
+    const statusColors = { START: "#27ae60", START_GROW: "#2ecc71", GROW: "#3498db", PAST_PRIME: "#f39c12", BAD: "#e74c3c" };
     html += `<div class="card">`;
-    html += `<h3>44-Day Timeline — <span style="color:#27ae60">START</span> <span style="color:#3498db">GROW</span> <span style="color:#e74c3c">BAD</span> <span style="color:#666;font-weight:normal;font-size:10px;margin-left:6px;">hover a day for why</span></h3>`;
+    html += `<h3>44-Day Timeline — <span style="color:#27ae60">START</span> <span style="color:#3498db">GROW</span> <span style="color:#f39c12">PAST PRIME</span> <span style="color:#e74c3c">BAD</span> <span style="color:#666;font-weight:normal;font-size:10px;margin-left:6px;">hover a day for why</span></h3>`;
     html += `<div class="tl-strip" id="tl-strip">`;
     const tlRunDate = new Date(data.run_date + "T12:00:00");
     for (let i = 0; i < tl.length; i++) {
@@ -359,7 +359,7 @@ async function init() {
     const elReason = pop.querySelector(".tt-reason");
     const elStats = pop.querySelector(".tt-stats");
 
-    const STATUS_COLOR = { START: "#27ae60", START_GROW: "#2ecc71", GROW: "#3498db", BAD: "#e74c3c" };
+    const STATUS_COLOR = { START: "#27ae60", START_GROW: "#2ecc71", GROW: "#3498db", PAST_PRIME: "#f39c12", BAD: "#e74c3c" };
     const histSoil = (burn.history && burn.history.hist_soil_temp) || [];
     const fcSoil = (burn.history && burn.history.forecast_soil_temp) || [];
     const histPrecip = (burn.history && burn.history.hist_precip) || [];

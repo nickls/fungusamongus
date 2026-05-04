@@ -7,7 +7,14 @@ To experiment with different scoring algorithms:
   3. Run: python morel_finder.py --config config_experimental.py
 """
 
-ALGO_VERSION = "0.8.0"
+ALGO_VERSION = "0.8.1"
+# 0.8.1 — PAST_PRIME status: warming-trigger species (morel) above grow_max
+#          (58F) but below past_prime_max (75F) now classified as PAST_PRIME
+#          instead of GROW. Deterministic readiness taper (max(0.30, 1 - 0.12 *
+#          past_prime_recent)) gives a smooth heat-decline instead of cliff at
+#          75F. SPA: smooth diamond-size taper from 60→90 (replaces 70/75/90
+#          step function), DIAMOND_THRESHOLD lowered to 60. PAST_PRIME shown
+#          amber on detail timeline.
 # 0.8.0 — Multi-species scaffolding. Porcini biology fully wired: thermal_signal
 #          ("warming"|"cooling") in classify_day, freeze_is_bad gate, season-priming
 #          (had_thermal_peak) for cooling-trigger species, config-driven ratchet
@@ -56,7 +63,7 @@ RATINGS = [
     (0,  "POOR", None),            # not rendered on map
 ]
 
-DIAMOND_THRESHOLD = 70  # scores >= this get diamond markers
+DIAMOND_THRESHOLD = 60  # scores >= this get diamond markers (smooth taper above)
 RENDER_THRESHOLD = 0    # show everything — filter sliders handle visibility
 
 # ── Morel scoring profile ─────────────────────────────────────────────────

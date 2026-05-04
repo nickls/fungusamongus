@@ -16,11 +16,13 @@ See also: [Predictive Modeling Research](reference/predictive-modeling-for-burn-
 | 0.6.0 | 2026-04-20 | Soil GDD, historical soil temp, multi-point aspect, rain events | [v0.6.0](reference/algo/v0.6.0.md) |
 | 0.6.1 | 2026-04-20 | Cooling trend penalty on GDD, freeze damage detection | |
 | 0.7.0 | 2026-04-20 | Phase-based model: Potential + Readiness replaces single score | [v0.7.0](reference/algo/v0.7.0.md) |
-| **0.7.1** | **2026-04-21** | **LANDFIRE EVT vegetation (15pts), burn type fix, field report #1** | |
+| 0.7.1 | 2026-04-21 | LANDFIRE EVT vegetation (15pts), burn type fix, field report #1 | |
+| 0.8.0 | 2026-05-02 | Multi-species scaffolding (porcini biology wired, per-type output paths) | |
+| **0.8.1** | **2026-05-03** | **PAST_PRIME status + readiness taper, smooth diamond size 60→90** | |
 
 ---
 
-## Current Model (v0.7.1) — Phase-Based Scoring
+## Current Model (v0.8.1) — Phase-Based Scoring
 
 The v0.5/0.6 model used a single 0-100 weighted score that conflated site quality with daily weather. A burn could score 82 on a snowy day because accumulated GDD was high. Users read "82" as "go today" when it really meant "this site has good long-term conditions."
 
@@ -89,7 +91,20 @@ Changes daily. Based on a rolling window analysis of weather conditions.
 | **START** | Soil warming into 43-50F + moisture event | Primordia initiating |
 | **START_GROW** | Soil 45-58F + warming + sustained moisture | Triggering AND sustaining |
 | **GROW** | Soil 45-58F + moisture present | Development continuing |
-| **BAD** | Soil <43F, freeze after warmth, >24in snow, or >58F | Nothing happening |
+| **PAST_PRIME** | Soil 58-75F (warming-trigger species) | Flush declining but still harvestable |
+| **BAD** | Soil <43F, freeze after warmth, >24in snow, or >75F | Nothing happening |
+
+**Past-prime taper (v0.8.1):** PAST_PRIME days count toward `grow_days_total` (biological progress preserved) but trigger a deterministic readiness multiplier `max(0.30, 1 - 0.12 × past_prime_recent)`, where `past_prime_recent` is the count of PAST_PRIME days in the last 7 days. Effect:
+
+| PAST_PRIME days (last 7) | Multiplier |
+|---|---|
+| 0 | 1.00 |
+| 1 | 0.88 |
+| 3 | 0.64 |
+| 5 | 0.40 |
+| 6+ | 0.30 (floor) |
+
+This replaces the old behavior where soil at 58-75F was treated identically to a perfect 52F day in the timeline. It also catches the regression's blind spot — `current_soil` (-0.27) and `soil_avg_14d` (+0.34) net out to ~+0.07/°F, so without the taper, hot sites looked *better* than cool ones.
 
 Then readiness looks backward from the target day:
 1. Were there **START days** in the lookback window (7-30 days ago)?
@@ -125,11 +140,11 @@ Re-fit with: `python -m utils.fit_regression --json data/real_scenarios_labeled.
 
 ### Map Visualization
 
-- **Diamond shape** = potential >= 70 (good burn site)
-- **Diamond size** = 3 tiers: big (pot 90+), medium (75+), small (70+)
+- **Diamond shape** = potential >= 60 (any decent burn site)
+- **Diamond size** = smooth linear taper, 12px at potential 60 → 32px at potential 90+
 - **Diamond color** = phase (purple=EMERGING, green=GROWING, orange=WAITING)
 - **Number inside** = readiness score
-- **Small dots** = potential < 70
+- **Small dots** = potential < 60
 
 Day picker changes readiness/phase. Potential stays stable.
 

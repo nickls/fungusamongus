@@ -425,10 +425,13 @@ function render() {
       const phaseColorMap = { EMERGING: "purple", GROWING: "green", WAITING: "orange", TOO_EARLY: "gray" };
       // Shape = potential (site quality), number inside = readiness
       const color = phaseColorMap[phase] || "orange";
-      const showDiamond = potential >= 70;  // good burn sites always get diamonds
+      const showDiamond = potential >= 60;  // diamonds for any decent site
 
       if (showDiamond) {
-        const size = potential >= 90 ? 32 : potential >= 75 ? 22 : 14;  // big / medium / small
+        // Smooth size taper: 60 → 12px (small), 90+ → 32px (huge).
+        // Linear in between so the visual maps to potential without stair-steps.
+        const t = Math.max(0, Math.min(1, (potential - 60) / 30));
+        const size = Math.round(12 + t * 20);
         const icon = L.divIcon({
           className: "",
           html: `<div style="
