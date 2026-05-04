@@ -28,5 +28,19 @@
   "sandbox": {
     "enabled": true,
     "autoAllowBashIfSandboxed": false
+  },
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "jq -r '.tool_input.file_path // empty' | { read -r f; case \"$f\" in */phase_scoring.py|*/config.py) .venv/bin/python -m utils.validate_field || exit 2;; esac; }",
+            "statusMessage": "Validating field reports..."
+          }
+        ]
+      }
+    ]
   }
 }
