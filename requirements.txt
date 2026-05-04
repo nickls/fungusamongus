@@ -4,3 +4,4 @@ folium
 matplotlib
 pandas
 scikit-learn
+rasterio   # for build_porcini_sites.py — reads LANDFIRE EVT/DEM rasters

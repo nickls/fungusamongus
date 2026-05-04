@@ -55,8 +55,17 @@ def main():
 
     slugs = args.slug if args.slug else DEFAULT_SLUGS
 
-    data = json.loads(Path("docs/data/latest.json").read_text())
-    hist = json.loads(Path("docs/data/history.json").read_text())
+    # Load per-type files. Falls back to the legacy filenames so older callers
+    # without --mushroom still work.
+    base = Path("docs/data")
+    type_latest = base / f"{args.mushroom}-latest.json"
+    type_history = base / f"{args.mushroom}-history.json"
+    if not type_latest.exists():
+        type_latest = base / "latest.json"
+        type_history = base / "history.json"
+    print(f"  loading {type_latest}")
+    data = json.loads(type_latest.read_text())
+    hist = json.loads(type_history.read_text())
     config = MUSHROOM_TYPES[args.mushroom]
     run_date = datetime.strptime(data["run_date"], "%Y-%m-%d")
 
@@ -94,8 +103,8 @@ def main():
                 cells.append("  --")
                 continue
             feats = extract_features(timeline, weather, target_day, config)
-            readiness = score_readiness(feats)
-            phase = classify_phase(feats)
+            readiness = score_readiness(feats, config)
+            phase = classify_phase(feats, config)
             cells.append(f"{phase_letter.get(phase, '?')} {readiness:>3d}")
 
         short = burn["name"][:27]
