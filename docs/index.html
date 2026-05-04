@@ -32,15 +32,6 @@
       </div>
 
       <div>
-        <label style="font-size:12px;color:#888;">Layers</label>
-        <div class="zoom-bar">
-          <button class="layer-btn active" data-layer="both" onclick="setLayers('both')">Both</button>
-          <button class="layer-btn" data-layer="markers" onclick="setLayers('markers')">Markers</button>
-          <button class="layer-btn" data-layer="heat" onclick="setLayers('heat')">Heatmap</button>
-        </div>
-      </div>
-
-      <div>
         <label style="font-size:12px;color:#888;">Species</label>
         <div class="species-bar" id="species-bar">
           <button class="species-btn active" data-species="morel" onclick="selectSpecies('morel')">
@@ -55,6 +46,15 @@
           <button class="species-btn coming-soon" data-species="chanterelle" data-tooltip="Coming soon" onclick="return false;">
             <span class="species-icon" style="background:#FF8C00;">C</span>Chanterelle
           </button>
+        </div>
+      </div>
+
+      <div id="layers-row">
+        <label style="font-size:12px;color:#888;">Layers</label>
+        <div class="zoom-bar">
+          <button class="layer-btn active" data-layer="both" onclick="setLayers('both')">Both</button>
+          <button class="layer-btn" data-layer="markers" onclick="setLayers('markers')">Markers</button>
+          <button class="layer-btn" data-layer="heat" onclick="setLayers('heat')">Heatmap</button>
         </div>
       </div>
 
@@ -73,12 +73,22 @@
         <div class="score-info-item"><b>Readiness</b> (0–100): Weather conditions for fruiting — soil temp, moisture, grow days. Changes daily.</div>
       </div>
 
-      <div class="legend">
+      <div class="legend" id="legend">
+        <!-- Phase legend — applies to diamond markers for both species -->
         <div class="legend-item"><div class="legend-diamond" style="background:purple;"></div> Emerging — go now</div>
         <div class="legend-item"><div class="legend-diamond" style="background:green;"></div> Growing — go soon</div>
         <div class="legend-item"><div class="legend-diamond" style="background:orange;"></div> Waiting — not yet</div>
-        <div class="legend-item"><div class="legend-dot" style="background:orange;"></div> Low potential / waiting</div>
+        <!-- Morel-only: small dot fallback for low-potential burns -->
+        <div class="legend-item legend-morel-only"><div class="legend-dot" style="background:orange;"></div> Low potential / waiting</div>
         <div class="legend-item" style="color:#666;font-size:10px;margin-top:4px;">Diamond size = potential | Number = readiness</div>
+        <!-- Porcini-only: suitability raster overlay gradient -->
+        <div class="legend-item legend-porcini-only" style="margin-top:8px;padding-top:6px;border-top:1px solid #0f3460;">
+          <div style="font-size:11px;color:#888;margin-bottom:4px;width:100%;">Stand suitability (basin tint)</div>
+        </div>
+        <div class="legend-item legend-porcini-only"><div class="legend-dot" style="background:#9b59b6;"></div> 0.9+ — prime habitat</div>
+        <div class="legend-item legend-porcini-only"><div class="legend-dot" style="background:#27ae60;"></div> 0.75–0.9 — good</div>
+        <div class="legend-item legend-porcini-only"><div class="legend-dot" style="background:#e67e22;"></div> 0.6–0.75 — marginal</div>
+        <div class="legend-item legend-porcini-only"><div class="legend-dot" style="background:#a06020;"></div> 0.5–0.6 — possible</div>
       </div>
 
       <div class="legend" id="veg-legend" style="display:none;">

@@ -10,7 +10,7 @@ const BASIN_BOUNDS = [[38.5, -121.3], [39.9, -119.3]];
 let speciesConfig = null;
 let FILTERS = [];
 
-let map, markersLayer, heatLayer;
+let map, markersLayer, heatLayer, suitabilityOverlay;
 let data = null;
 let selectedDay = 0;
 let filters = {};
@@ -44,6 +44,19 @@ async function init() {
   document.querySelectorAll(".species-btn").forEach((btn) => {
     btn.classList.toggle("active", btn.dataset.species === species);
   });
+
+  // Show only the legend rows that apply to the active species
+  document.querySelectorAll("[class*='legend-'][class$='-only']").forEach((row) => {
+    const matchClass = `legend-${species}-only`;
+    row.style.display = row.classList.contains(matchClass) ? "" : "none";
+  });
+
+  // Relabel the third Layers button to match the species: "Heatmap" for
+  // morel (Gaussian density), "Overlay" for porcini (suitability raster).
+  const heatBtn = document.querySelector('.layer-btn[data-layer="heat"]');
+  if (heatBtn) {
+    heatBtn.textContent = speciesConfig.useHeatmap ? "Heatmap" : "Overlay";
+  }
 
   // Set metadata
   document.getElementById("run-date").textContent = data.run_date;
@@ -83,9 +96,33 @@ async function init() {
     maxZoom: 16,
   });
 
+  // Build the overlay layer set, including any species-specific suitability
+  // raster (porcini gets a pre-rendered PNG of pixel-level porcini score).
+  const overlayLayers = { "Vegetation (LANDFIRE)": landfireEVT };
+  if (speciesConfig.overlay) {
+    // Prefer the sidecar JSON's actual raster bounds (ArcGIS pads the
+    // requested bbox to preserve pixel aspect). Fall back to declared bounds.
+    let bounds = speciesConfig.overlay.bounds;
+    if (speciesConfig.overlay.boundsURL) {
+      try {
+        const r = await fetch(speciesConfig.overlay.boundsURL);
+        if (r.ok) {
+          const meta = await r.json();
+          if (meta.leaflet_bounds) bounds = meta.leaflet_bounds;
+        }
+      } catch (e) { /* keep fallback */ }
+    }
+    suitabilityOverlay = L.imageOverlay(
+      speciesConfig.overlay.url, bounds,
+      { opacity: speciesConfig.overlay.opacity || 0.55 }
+    );
+    suitabilityOverlay.addTo(map);
+    overlayLayers[`${speciesConfig.label.split(" ")[0]} suitability`] = suitabilityOverlay;
+  }
+
   L.control.layers(
     {"Esri Topo": esriTopo, "Satellite": esriSat, "CARTO": carto},
-    {"Vegetation (LANDFIRE)": landfireEVT},
+    overlayLayers,
     {position: "topright"}
   ).addTo(map);
 
@@ -218,6 +255,13 @@ function setLayers(mode) {
   document.querySelectorAll(".layer-btn").forEach(btn => {
     btn.classList.toggle("active", btn.dataset.layer === mode);
   });
+  // Suitability raster overlay (porcini): tie visibility to layerMode so the
+  // "Markers / Overlay / Both" buttons work as expected.
+  if (suitabilityOverlay) {
+    const showOverlay = mode === "both" || mode === "heat";
+    if (showOverlay && !map.hasLayer(suitabilityOverlay)) suitabilityOverlay.addTo(map);
+    else if (!showOverlay && map.hasLayer(suitabilityOverlay)) map.removeLayer(suitabilityOverlay);
+  }
   render();
 }
 
@@ -244,11 +288,9 @@ function render() {
   }
 
   // Mark which burns get the diamond "priority" marker treatment.
-  // For modes "discs" or "priority", only the top-N priority sites get
-  // diamonds; everyone else either renders as a colored disc (discs mode)
-  // or doesn't render as a marker (priority mode).
+  // For non-"both" render modes, only the top-N priority sites get diamonds.
   let markerSet;
-  if (speciesConfig.renderMode === "priority" || speciesConfig.renderMode === "discs") {
+  if (speciesConfig.renderMode !== "both") {
     const cap = speciesConfig.priorityCap || 50;
     const topN = [...eligible].sort((a, b) => b.score - a.score).slice(0, cap);
     markerSet = new Set(topN.map(e => e.burnIdx));
@@ -332,9 +374,9 @@ function render() {
         L.marker([burn.lat, burn.lon], { icon })
           .bindPopup(() => makePopup(burn, day, burnIdx), {maxWidth: 360})
           .addTo(markersLayer);
-      } else if (speciesConfig.renderMode !== "discs") {
-        // Small dot fallback for low-potential burns (morel only — porcini
-        // covers this with the disc layer)
+      } else if (speciesConfig.renderMode === "both") {
+        // Small dot fallback for low-potential morel burns. Porcini doesn't
+        // need this — the suitability raster already paints those areas.
         L.circleMarker([burn.lat, burn.lon], {
           radius: 4, color, fillColor: color, fillOpacity: 0.6, weight: 1,
         })

@@ -58,14 +58,23 @@ const SPECIES = {
     color: "#8B4513",
     icon: "P",
     // ── Map rendering ──
-    // Porcini: ~1000 independent stands. Each gets a colored disc (color =
-    // readiness × potential, size = pixel_count). Top-N also get a diamond
-    // badge on top. Gaussian heatmap is disabled — concentration of adjacent
-    // stands isn't a meaningful signal for mycorrhizal mushrooms.
-    renderMode: "discs",
+    // Porcini: per-pixel suitability raster pre-rendered server-side from
+    // the LANDFIRE EVT raster. Loaded as a Leaflet ImageOverlay covering the
+    // basin bbox. Top-N priority stands still get diamond markers on top.
+    renderMode: "raster",
     priorityCap: 50,
-    useHeatmap: false,        // discs replace the density blob
+    useHeatmap: false,
     showBurnType: false,
+    // Bounds come from the sidecar JSON (written by render_overlay.py) so the
+    // overlay stays in sync with the underlying raster's actual georeferencing
+    // even if ArcGIS pads the requested bbox. The fallback is the requested
+    // bbox — close but slightly off if the sidecar 404s.
+    overlay: {
+      url: "data/porcini-overlay.png",
+      boundsURL: "data/porcini-overlay.json",
+      bounds: [[38.80, -120.30], [39.40, -119.85]],  // fallback only
+      opacity: 0.55,
+    },
     // ── Sidebar filters ──
     // No burn_* sliders. Instead: vegetation-aware filters.
     filters: ["potential", "readiness", "elevation_min", "elevation_max"],
