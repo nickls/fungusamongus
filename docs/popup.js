@@ -106,3 +106,15 @@ function aspectDir(deg) {
   const dirs = ["N", "NE", "E", "SE", "S", "SW", "W", "NW"];
   return dirs[Math.floor(((deg + 22.5) % 360) / 45)];
 }
+
+// Map a score in [0, 1] to a color along the readiness gradient.
+// Mirrors the phase color scheme: gray (low) → orange → green → purple (top).
+function scoreColor(score) {
+  const s = Math.max(0, Math.min(1, score));
+  if (s < 0.2) return "#666666";    // gray — unlikely
+  if (s < 0.35) return "#888888";   // light gray
+  if (s < 0.5) return "#e67e22";    // orange — waiting
+  if (s < 0.65) return "#f39c12";   // amber
+  if (s < 0.8) return "#27ae60";    // green — growing
+  return "#9b59b6";                 // purple — emerging / top
+}

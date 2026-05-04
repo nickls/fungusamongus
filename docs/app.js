@@ -243,25 +243,31 @@ function render() {
     eligible.push({ burn, day, burnIdx, score: prioritScore(burn, selectedDay) });
   }
 
-  // Mark which burns get clickable markers based on render mode
+  // Mark which burns get the diamond "priority" marker treatment.
+  // For modes "discs" or "priority", only the top-N priority sites get
+  // diamonds; everyone else either renders as a colored disc (discs mode)
+  // or doesn't render as a marker (priority mode).
   let markerSet;
-  if (speciesConfig.renderMode === "priority") {
+  if (speciesConfig.renderMode === "priority" || speciesConfig.renderMode === "discs") {
     const cap = speciesConfig.priorityCap || 50;
     const topN = [...eligible].sort((a, b) => b.score - a.score).slice(0, cap);
     markerSet = new Set(topN.map(e => e.burnIdx));
   } else {
-    markerSet = null;  // null = all eligible get markers
+    markerSet = null;  // null = all eligible get diamond markers
   }
 
-  // Pass 2: emit heat data + markers
+  // Pass 2: emit discs (porcini) / heat (morel) + markers
   for (const { burn, day, burnIdx } of eligible) {
     shown++;
 
-    // Heatmap data — scatter points across burn acreage
     const potential = burn.potential || 0;
-    const weight = potential / 100;
-    if (speciesConfig.showBurnType) {
-      // Burn sites: scatter heat across the burn perimeter (acres = real fire area)
+    const pd = (burn.phase_days || [])[selectedDay] || {};
+    const readiness = pd.readiness || 0;
+    const phase = pd.phase || "?";
+
+    // Heat data: only for species that actually want a Gaussian heatmap
+    if (speciesConfig.useHeatmap) {
+      const weight = potential / 100;
       const acres = burn.acres || 1;
       const burnRadiusM = Math.sqrt(acres * 4047 / Math.PI);
       const burnRadiusDeg = burnRadiusM / 111000;
@@ -277,28 +283,35 @@ function render() {
           ]);
         }
       }
-    } else {
-      // Stand sites (porcini): single point per cluster centroid. The
-      // "acres" field is a synthetic stand-size estimate, not a real
-      // perimeter — radial scatter would be misleading.
-      heatData.push([burn.lat, burn.lon, weight * 2]);
     }
 
-    // Marker (only if layerMode includes markers AND this burn is in the marker set)
+    // Disc render: every eligible stand gets a colored circle (porcini).
+    // Color = readiness × potential mapped through phase color; size = stand
+    // size (pixel_count for porcini, fixed otherwise).
+    if (speciesConfig.renderMode === "discs"
+        && (layerMode === "both" || layerMode === "heat")) {
+      const score = (potential * (readiness / 100)) / 100;  // 0..1
+      const discColor = scoreColor(score);
+      const radius = Math.max(2.5, Math.min(10, Math.sqrt((burn.pixel_count || 4) / 2)));
+      L.circleMarker([burn.lat, burn.lon], {
+        radius,
+        color: "#000",
+        weight: 0.5,
+        fillColor: discColor,
+        fillOpacity: 0.7,
+      })
+        .bindPopup(() => makePopup(burn, day, burnIdx), {maxWidth: 360})
+        .addTo(markersLayer);
+    }
+
+    // Diamond marker for priority sites OR all sites in modes "both"/"markers".
     const inMarkerSet = markerSet === null || markerSet.has(burnIdx);
     if (inMarkerSet && (layerMode === "both" || layerMode === "markers")) {
-      // Color by phase (from phase_days for selected day)
-      const pd = (burn.phase_days || [])[selectedDay] || {};
-      const phase = pd.phase || "?";
-      const readiness = pd.readiness || 0;
       const phaseColorMap = { EMERGING: "purple", GROWING: "green", WAITING: "orange", TOO_EARLY: "gray" };
-      // Shape = potential (site quality), number inside = readiness
       const color = phaseColorMap[phase] || "orange";
-      const showDiamond = potential >= 60;  // diamonds for any decent site
+      const showDiamond = potential >= 60;
 
       if (showDiamond) {
-        // Smooth size taper: 60 → 12px (small), 90+ → 32px (huge).
-        // Linear in between so the visual maps to potential without stair-steps.
         const t = Math.max(0, Math.min(1, (potential - 60) / 30));
         const size = Math.round(12 + t * 20);
         const icon = L.divIcon({
@@ -319,13 +332,11 @@ function render() {
         L.marker([burn.lat, burn.lon], { icon })
           .bindPopup(() => makePopup(burn, day, burnIdx), {maxWidth: 360})
           .addTo(markersLayer);
-      } else {
+      } else if (speciesConfig.renderMode !== "discs") {
+        // Small dot fallback for low-potential burns (morel only — porcini
+        // covers this with the disc layer)
         L.circleMarker([burn.lat, burn.lon], {
-          radius: 4,
-          color: color,
-          fillColor: color,
-          fillOpacity: 0.6,
-          weight: 1,
+          radius: 4, color, fillColor: color, fillOpacity: 0.6, weight: 1,
         })
           .bindPopup(() => makePopup(burn, day, burnIdx), {maxWidth: 360})
           .addTo(markersLayer);
@@ -333,7 +344,7 @@ function render() {
     }
   }
 
-  // Heatmap (only if layerMode includes heat)
+  // Gaussian heatmap (only for species that opted in)
   if (heatData.length > 0 && typeof L.heatLayer === "function"
       && (layerMode === "both" || layerMode === "heat")) {
     heatLayer = L.heatLayer(heatData, {

@@ -23,8 +23,9 @@ const SPECIES = {
     color: "#DAA520",
     icon: "M",
     // ── Map rendering ──
-    renderMode: "both",   // diamonds + heatmap
+    renderMode: "both",   // diamonds + heatmap (burns are spatially clustered)
     priorityCap: null,    // no cap — show every burn site
+    useHeatmap: true,
     showBurnType: true,
     // ── Sidebar filters (in order) ──
     filters: ["potential", "readiness", "burn_age_max", "soil_threshold",
@@ -57,11 +58,13 @@ const SPECIES = {
     color: "#8B4513",
     icon: "P",
     // ── Map rendering ──
-    // Porcini: ~1000 candidate stands. Markers for ALL would be a sea of
-    // diamonds. Use heatmap as the spatial signal, plus markers for the
-    // top-N priority sites (best potential × readiness).
-    renderMode: "priority",   // heatmap always, markers for top-N only
+    // Porcini: ~1000 independent stands. Each gets a colored disc (color =
+    // readiness × potential, size = pixel_count). Top-N also get a diamond
+    // badge on top. Gaussian heatmap is disabled — concentration of adjacent
+    // stands isn't a meaningful signal for mycorrhizal mushrooms.
+    renderMode: "discs",
     priorityCap: 50,
+    useHeatmap: false,        // discs replace the density blob
     showBurnType: false,
     // ── Sidebar filters ──
     // No burn_* sliders. Instead: vegetation-aware filters.
