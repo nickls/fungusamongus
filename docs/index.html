@@ -31,6 +31,15 @@
         </div>
       </div>
 
+      <div id="layers-row">
+        <label style="font-size:12px;color:#888;">Layers</label>
+        <div class="zoom-bar">
+          <button class="layer-btn active" data-layer="both" onclick="setLayers('both')">Both</button>
+          <button class="layer-btn" data-layer="markers" onclick="setLayers('markers')">Markers</button>
+          <button class="layer-btn" data-layer="heat" onclick="setLayers('heat')">Heatmap</button>
+        </div>
+      </div>
+
       <div>
         <label style="font-size:12px;color:#888;">Species</label>
         <div class="species-bar" id="species-bar">
@@ -46,15 +55,6 @@
           <button class="species-btn coming-soon" data-species="chanterelle" data-tooltip="Coming soon" onclick="return false;">
             <span class="species-icon" style="background:#FF8C00;">C</span>Chanterelle
           </button>
-        </div>
-      </div>
-
-      <div id="layers-row">
-        <label style="font-size:12px;color:#888;">Layers</label>
-        <div class="zoom-bar">
-          <button class="layer-btn active" data-layer="both" onclick="setLayers('both')">Both</button>
-          <button class="layer-btn" data-layer="markers" onclick="setLayers('markers')">Markers</button>
-          <button class="layer-btn" data-layer="heat" onclick="setLayers('heat')">Heatmap</button>
         </div>
       </div>
 
