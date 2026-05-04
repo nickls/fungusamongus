@@ -98,39 +98,59 @@ def evaluate_report(report, sites_by_slug, hist, run_date, config):
     return "INFO", summary
 
 
-def main():
-    data_path = Path("docs/data/morel-latest.json")
-    hist_path = Path("docs/data/morel-history.json")
+def load_catalog(species):
+    """Return (data, history, run_date) for the given species, or (None, None, None)."""
+    base = Path("docs/data")
+    data_path = base / f"{species}-latest.json"
+    hist_path = base / f"{species}-history.json"
+    if not data_path.exists() and species == "morel":
+        # legacy filenames (back-compat for the morel run)
+        data_path = base / "latest.json"
+        hist_path = base / "history.json"
     if not data_path.exists():
-        # legacy filenames
-        data_path = Path("docs/data/latest.json")
-        hist_path = Path("docs/data/history.json")
-    if not data_path.exists():
-        print(f"ERROR: no {data_path} found — run morel_finder.py first", file=sys.stderr)
-        sys.exit(2)
-
+        return None, None, None
     data = json.loads(data_path.read_text())
-    hist = json.loads(hist_path.read_text())
+    hist = json.loads(hist_path.read_text()) if hist_path.exists() else []
+    run_date = datetime.strptime(data["run_date"], "%Y-%m-%d")
+    return data, hist, run_date
+
+
+def main():
     reports = json.loads(Path("data/field_reports.json").read_text())
 
-    config = MUSHROOM_TYPES["morel"]
-    run_date = datetime.strptime(data["run_date"], "%Y-%m-%d")
-    sites_by_slug = {b["slug"]: (i, b) for i, b in enumerate(data["burns"])}
-
-    print(f"FIELD VALIDATION — model {data['algo_version']} vs {len(reports)} reports")
-    print(f"Catalog snapshot: {data['run_date']}\n")
+    # Group by mushroom_type (default "morel" for legacy reports)
+    by_species = {}
+    for r in reports:
+        sp = r.get("mushroom_type", "morel")
+        by_species.setdefault(sp, []).append(r)
 
     counts = {"PASS": 0, "FAIL": 0, "SKIP": 0, "INFO": 0}
-    failures = []
-    for r in reports:
-        status, msg = evaluate_report(r, sites_by_slug, hist, run_date, config)
-        counts[status] += 1
-        marker = {"PASS": "✓", "FAIL": "✗", "SKIP": "·", "INFO": "·"}[status]
-        print(f"  {marker} {msg}")
-        if status == "FAIL":
-            failures.append(msg)
 
-    print()
+    for species, sp_reports in by_species.items():
+        if species not in MUSHROOM_TYPES:
+            print(f"ERROR: unknown mushroom_type '{species}' in field reports", file=sys.stderr)
+            sys.exit(2)
+
+        data, hist, run_date = load_catalog(species)
+        if data is None:
+            print(f"  · {species}: no catalog at docs/data/{species}-latest.json — "
+                  f"run morel_finder.py --mushroom-type={species} first")
+            counts["SKIP"] += len(sp_reports)
+            continue
+
+        config = MUSHROOM_TYPES[species]
+        sites_by_slug = {b["slug"]: (i, b) for i, b in enumerate(data["burns"])}
+
+        print(f"FIELD VALIDATION ({species}) — model {data['algo_version']} vs {len(sp_reports)} reports")
+        print(f"  Catalog snapshot: {data['run_date']}")
+
+        for r in sp_reports:
+            status, msg = evaluate_report(r, sites_by_slug, hist, run_date, config)
+            counts[status] += 1
+            marker = {"PASS": "✓", "FAIL": "✗", "SKIP": "·", "INFO": "·"}[status]
+            print(f"  {marker} {msg}")
+        print()
+
     print(f"Summary: {counts['PASS']} pass, {counts['FAIL']} fail, "
           f"{counts['SKIP']} skip, {counts['INFO']} info")
 
