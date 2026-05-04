@@ -7,7 +7,12 @@ To experiment with different scoring algorithms:
   3. Run: python morel_finder.py --config config_experimental.py
 """
 
-ALGO_VERSION = "0.8.1"
+ALGO_VERSION = "0.8.2"
+# 0.8.2 — Field-anchored PAST_PRIME thresholds for morel: grow_soil_max raised
+#          58F → 68F (Unit 2.3 5lb harvest at 60s validates); past_prime_max
+#          75F → 78F. Taper softened: 2-day grace before any penalty, then 8%
+#          per day with 0.50 floor (was 12%/day, 0.30 floor). A site touching
+#          60F a couple days no longer drops out of the "ready" rating.
 # 0.8.1 — PAST_PRIME status: warming-trigger species (morel) above grow_max
 #          (58F) but below past_prime_max (75F) now classified as PAST_PRIME
 #          instead of GROW. Deterministic readiness taper (max(0.30, 1 - 0.12 *
@@ -83,6 +88,18 @@ MOREL_PROFILE = {
     "thermal_signal": "warming",       # spring-emergence species
     "freeze_is_bad": True,             # primordia damaged by freeze after warmth
     "thermal_peak_threshold": 45,      # tracks "had_warmth" in build_timeline
+    # ── Soil temp bands for classify_day ──
+    # Field-anchored: Unit 2.3 produced 4-5lbs at 6mo with soil hitting 60s
+    # in late April. 58F as grow_max was too tight — morels fruit well into
+    # the mid-60s. PAST_PRIME band (68-78F) is "declining but harvestable",
+    # and past_prime_max (78F) is the hard "season over" cliff.
+    "start_soil_min": 43,
+    "start_soil_max": 50,
+    "grow_soil_min": 45,
+    "grow_soil_max": 68,               # raised from default 58 per field data
+    "past_prime_max": 78,              # raised from default 75
+    "bad_freeze_threshold": 32,
+    "bad_snow_depth": 24,
     # ── Anti-whiplash ratchet ──
     "ratchet_decay": 0.93,             # 9.5-day half-life — observed morel persistence
     "ratchet_lookback": 14,

@@ -380,13 +380,16 @@ def score_readiness(features, config=None):
     prob = 1 / (1 + math.exp(-z))
     raw = round(prob * 100)
 
-    # Past-prime taper: linear drop-off as PAST_PRIME days accumulate in
-    # the last 7 days. Catches the 58-75F band (warming-trigger species)
-    # where the regression alone shows little signal because GROW and
-    # PAST_PRIME days look identical to it. Floor at 0.30 — even a fully
-    # past-prime week shouldn't zero out a site that was clearly producing.
+    # Past-prime taper: PAST_PRIME means soil above grow_max (e.g. 68F+ for
+    # morel) — declining but harvestable. We only penalize SUSTAINED heat,
+    # not noise. First 2 PAST_PRIME days in last 7 are free; beyond that,
+    # 8% drop per additional day, floored at 0.50. So a fully past-prime
+    # week (7 days) = 0.60x; 4 days = 0.84x; 2 days = no penalty.
+    # This matches the field anchor (Unit 2.3, 4-5lbs at 6mo with soils
+    # touching the 60s in late April — those days are GROW, not PAST_PRIME).
     pp_recent = features.get("past_prime_recent", 0)
-    taper = max(0.30, 1.0 - 0.12 * pp_recent)
+    pp_grace = 2
+    taper = max(0.50, 1.0 - 0.08 * max(0, pp_recent - pp_grace))
     raw = round(raw * taper)
 
     # Cap readiness by phase — the regression doesn't weight start_days

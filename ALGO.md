@@ -18,11 +18,12 @@ See also: [Predictive Modeling Research](reference/predictive-modeling-for-burn-
 | 0.7.0 | 2026-04-20 | Phase-based model: Potential + Readiness replaces single score | [v0.7.0](reference/algo/v0.7.0.md) |
 | 0.7.1 | 2026-04-21 | LANDFIRE EVT vegetation (15pts), burn type fix, field report #1 | |
 | 0.8.0 | 2026-05-02 | Multi-species scaffolding (porcini biology wired, per-type output paths) | |
-| **0.8.1** | **2026-05-03** | **PAST_PRIME status + readiness taper, smooth diamond size 60→90** | |
+| 0.8.1 | 2026-05-03 | PAST_PRIME status + readiness taper, smooth diamond size 60→90 | |
+| **0.8.2** | **2026-05-03** | **Field-anchored PAST_PRIME thresholds (grow_max 68F, taper 2-day grace)** | |
 
 ---
 
-## Current Model (v0.8.1) — Phase-Based Scoring
+## Current Model (v0.8.2) — Phase-Based Scoring
 
 The v0.5/0.6 model used a single 0-100 weighted score that conflated site quality with daily weather. A burn could score 82 on a snowy day because accumulated GDD was high. Users read "82" as "go today" when it really meant "this site has good long-term conditions."
 
@@ -91,20 +92,24 @@ Changes daily. Based on a rolling window analysis of weather conditions.
 | **START** | Soil warming into 43-50F + moisture event | Primordia initiating |
 | **START_GROW** | Soil 45-58F + warming + sustained moisture | Triggering AND sustaining |
 | **GROW** | Soil 45-58F + moisture present | Development continuing |
-| **PAST_PRIME** | Soil 58-75F (warming-trigger species) | Flush declining but still harvestable |
-| **BAD** | Soil <43F, freeze after warmth, >24in snow, or >75F | Nothing happening |
+| **PAST_PRIME** | Soil 68-78F (warming-trigger species, morel) | Flush declining but still harvestable |
+| **BAD** | Soil <43F, freeze after warmth, >24in snow, or >78F | Nothing happening |
 
-**Past-prime taper (v0.8.1):** PAST_PRIME days count toward `grow_days_total` (biological progress preserved) but trigger a deterministic readiness multiplier `max(0.30, 1 - 0.12 × past_prime_recent)`, where `past_prime_recent` is the count of PAST_PRIME days in the last 7 days. Effect:
+**Field-anchored thresholds (v0.8.2):** Initial v0.8.1 values used the `classify_day` defaults (grow_max=58F, past_prime_max=75F), which flagged Unit 2.3 as PAST_PRIME on Apr 30 — the same day a 4-5lb harvest happened at 60ish soil temps. Field reality: morels fruit well into the mid-60s. Morel profile now overrides:
+- `grow_soil_max = 68F` (raised from 58F)
+- `past_prime_max = 78F` (raised from 75F)
+
+**Past-prime taper:** PAST_PRIME days count toward `grow_days_total` (biological progress preserved) but trigger a deterministic readiness multiplier `max(0.50, 1 - 0.08 × max(0, past_prime_recent − 2))`, where `past_prime_recent` is the count of PAST_PRIME days in the last 7 days. The 2-day grace tolerates noise (a single hot afternoon doesn't tank readiness). Effect:
 
 | PAST_PRIME days (last 7) | Multiplier |
 |---|---|
-| 0 | 1.00 |
-| 1 | 0.88 |
-| 3 | 0.64 |
-| 5 | 0.40 |
-| 6+ | 0.30 (floor) |
+| 0-2 | 1.00 (grace window) |
+| 3 | 0.92 |
+| 5 | 0.76 |
+| 7 | 0.60 |
+| Any sustained | 0.50 (floor) |
 
-This replaces the old behavior where soil at 58-75F was treated identically to a perfect 52F day in the timeline. It also catches the regression's blind spot — `current_soil` (-0.27) and `soil_avg_14d` (+0.34) net out to ~+0.07/°F, so without the taper, hot sites looked *better* than cool ones.
+The taper catches the regression's blind spot — `current_soil` (-0.27) and `soil_avg_14d` (+0.34) net out to ~+0.07/°F, so without the taper, hot sites looked *better* than cool ones.
 
 Then readiness looks backward from the target day:
 1. Were there **START days** in the lookback window (7-30 days ago)?
