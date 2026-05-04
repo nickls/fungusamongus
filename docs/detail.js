@@ -97,12 +97,27 @@ async function init() {
 
   let html = "";
 
+  // Per-species detail config (from species.js — falls back to morel for safety)
+  const sp = (typeof SPECIES !== "undefined" && SPECIES[species]) || null;
+  const showBurnType = sp ? sp.showBurnType : true;
+
   // ════════════════════════════════════════════════════════════════
   // HEADER
   // ════════════════════════════════════════════════════════════════
   html += `<h1>${burn.name}</h1>`;
   html += `<div class="meta">`;
-  html += `${(burn.acres||0).toFixed(0)}ac | ${burn.burn_type} | ${burn.elevation_ft?.toFixed(0)||"?"}ft`;
+  // Burn-style header for fire species; vegetation-style for others.
+  const headerBits = [];
+  if (showBurnType) {
+    headerBits.push(`${(burn.acres||0).toFixed(0)}ac`);
+    if (burn.burn_type) headerBits.push(burn.burn_type);
+  } else if (burn.evt_name) {
+    // Truncate long EVT names for the header
+    const short = burn.evt_name.length > 50 ? burn.evt_name.slice(0, 47) + "…" : burn.evt_name;
+    headerBits.push(short);
+  }
+  if (burn.elevation_ft) headerBits.push(`${burn.elevation_ft.toFixed(0)}ft`);
+  html += headerBits.join(" | ");
   html += ` | <a href="https://www.google.com/maps?q=${burn.lat},${burn.lon}" target="_blank">Google Maps</a>`;
   html += ` | Algo ${data.algo_version} | Run ${data.run_date}`;
   html += `</div>`;
@@ -144,11 +159,12 @@ async function init() {
   html += `<div class="section"><div class="section-title">Site</div>`;
   html += `<div class="two-col">`;
 
-  // Left: potential breakdown
+  // Left: potential breakdown — uses the species' factor list (with weights
+  // matching its config so the bar widths reflect actual contribution caps).
   html += `<div class="card">`;
   html += `<h3>Potential Breakdown</h3>`;
   const potScores = burn.potential_scores || {};
-  const potFactors = [
+  const potFactors = (sp && sp.detail && sp.detail.potentialFactors) || [
     { key: "burn_quality", label: "Burn Quality", max: 40, color: "#f39c12" },
     { key: "vegetation", label: "Vegetation", max: 15, color: "#00de00" },
     { key: "elevation", label: "Elevation", max: 15, color: "#3498db" },
@@ -199,7 +215,7 @@ async function init() {
     in_season: "Morel season is April through July in the Tahoe Basin.",
   };
   html += `<div class="details-grid">`;
-  const siteDetails = [
+  const siteDetails = (sp && sp.detail && sp.detail.siteDetails) || [
     ["burn_age", "Burn Age"], ["burn_type", "Type"], ["burn_acres", "Size"],
     ["elevation", "Elevation"], ["aspect", "Aspect"], ["slope", "Slope"],
     ["ideal_band", "Ideal Band"], ["in_season", "Season"],
@@ -333,15 +349,33 @@ async function init() {
     }
   }
 
-  const bType = (burn.burn_type || "").toLowerCase();
-  if (bType.includes("machine pile")) {
-    tips.push("Machine pile — look for distinct pile scars (blackened circles 3-10ft). Morels cluster within 1-5m of each. Walk pile to pile.");
-  } else if (bType.includes("hand pile")) {
-    tips.push("Hand pile — smaller, more numerous scars. Walk a grid. Check edges where ash meets unburned duff.");
-  } else if (bType.includes("underburn")) {
-    tips.push("Underburn — generally low severity. Focus on hotspots around stumps, root wads, downed logs. Skip intact duff.");
-  } else if (bType.includes("wildfire")) {
-    tips.push("Wildfire — focus on moderate burn: dead standing trees but not moonscaped. Avoid unburned patches and scorched zones.");
+  // Burn-type tips only apply to fire-associated species (morel)
+  if (showBurnType) {
+    const bType = (burn.burn_type || "").toLowerCase();
+    if (bType.includes("machine pile")) {
+      tips.push("Machine pile — look for distinct pile scars (blackened circles 3-10ft). Morels cluster within 1-5m of each. Walk pile to pile.");
+    } else if (bType.includes("hand pile")) {
+      tips.push("Hand pile — smaller, more numerous scars. Walk a grid. Check edges where ash meets unburned duff.");
+    } else if (bType.includes("underburn")) {
+      tips.push("Underburn — generally low severity. Focus on hotspots around stumps, root wads, downed logs. Skip intact duff.");
+    } else if (bType.includes("wildfire")) {
+      tips.push("Wildfire — focus on moderate burn: dead standing trees but not moonscaped. Avoid unburned patches and scorched zones.");
+    }
+  } else {
+    // Vegetation-driven tips for non-fire species (porcini)
+    const veg = (burn.evt_name || "").toLowerCase();
+    if (veg.includes("red fir")) {
+      tips.push("Red fir stand — check duff under mature trees. Porcini fruit in moss / needle litter, often on subtle mounds.");
+    } else if (veg.includes("mixed conifer")) {
+      tips.push("Mixed conifer — porcini favor older trees with deep duff. Walk the edges where stand transitions.");
+    } else if (veg.includes("jeffrey pine") || veg.includes("ponderosa")) {
+      tips.push("Pine — look near the drip line of mature trees. Often pushes up through pine needles after rain.");
+    } else if (veg.includes("lodgepole") || veg.includes("subalpine")) {
+      tips.push("High-elevation conifer — short window, watch for first fall flush after rain + cool spell.");
+    }
+    if (burn.pixel_count) {
+      tips.push(`Stand size: ~${burn.pixel_count} grid cells. Larger stands have more surface area to search.`);
+    }
   }
 
   if (siteElev > 7000 && curMonth <= 5) tips.push("High elevation (>7000ft) — snowmelt may still be in progress. Return when soil has had 2-3 weeks to warm.");

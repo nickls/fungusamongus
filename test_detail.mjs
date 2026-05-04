@@ -11,6 +11,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const ROOT = path.join(path.dirname(fileURLToPath(import.meta.url)), "docs");
+const speciesJSCode = fs.readFileSync(path.join(ROOT, "species.js"), "utf8");
 const detailJSCode = fs.readFileSync(path.join(ROOT, "detail.js"), "utf8");
 
 function makeNode(tag, ctx) {
@@ -91,6 +92,10 @@ async function runSmoke(species) {
     const text = fs.readFileSync(filePath, "utf8");
     return { ok: true, status: 200, json: async () => JSON.parse(text), text: async () => text };
   };
+
+  // Load species.js into globals first (it sets SPECIES, getSpeciesFromURL, etc.).
+  // We bridge the script's top-level vars into globalThis so detail.js sees them.
+  new Function(speciesJSCode + "\nglobalThis.SPECIES = SPECIES;\nglobalThis.SUPPORTED_SPECIES = SUPPORTED_SPECIES;\nglobalThis.FILTER_LIBRARY = FILTER_LIBRARY;\nglobalThis.getSpeciesFromURL = getSpeciesFromURL;\nglobalThis.selectSpecies = selectSpecies;\nglobalThis.prioritScore = prioritScore;")();
 
   // Re-evaluate detail.js — it registers __init on DOMContentLoaded
   global.__init = null;

@@ -1,36 +1,14 @@
 // Foraging SPA — loads scored data per mushroom type, renders map.
 // Type is selected via the species buttons or ?type= URL param. Default: morel.
+// Per-species rendering / filter / detail config lives in species.js.
 
 const ALDER_CREEK = [39.3187, -120.2125];
 const LOCAL_BOUNDS = [[39.0, -120.65], [39.65, -119.75]];
 const BASIN_BOUNDS = [[38.5, -121.3], [39.9, -119.3]];
 
-const SUPPORTED_SPECIES = ["morel", "porcini"];
-
-function getSpeciesFromURL() {
-  const t = new URLSearchParams(window.location.search).get("type");
-  return SUPPORTED_SPECIES.includes(t) ? t : "morel";
-}
-
-function selectSpecies(species) {
-  if (!SUPPORTED_SPECIES.includes(species)) return;
-  const url = new URL(window.location.href);
-  if (species === "morel") url.searchParams.delete("type");
-  else url.searchParams.set("type", species);
-  window.location.href = url.toString();
-}
-
-const FILTERS = [
-  // Phase scores
-  { key: "potential", label: "Min Potential", max: 100, default: 0, color: "#53a8b6", tip: "Site quality — burn recency, type, elevation, aspect." },
-  { key: "readiness", label: "Min Readiness", max: 100, default: 0, color: "#e94560", tip: "How close to fruiting — start days, grow days, weather." },
-  { key: "burn_age_max", label: "Max Burn Age (mo)", max: 36, default: 18, color: "#e67e22", tip: "Hide burns older than N months. 36 = no limit.", mode: "max", source: "burn_age_months" },
-  // Raw conditions (from legacy day scores)
-  { key: "soil_threshold", label: "Min Soil Temp", max: 25, default: 0, color: "#c0392b", tip: "Filter by soil temperature score." },
-  { key: "recent_moisture", label: "Min Moisture", max: 20, default: 0, color: "#2980b9", tip: "Filter by moisture score." },
-  { key: "burn_quality", label: "Min Burn Quality", max: 15, default: 0, color: "#f39c12", tip: "Filter by burn recency + type." },
-  { key: "air_temp", label: "Min Air Temp", max: 5, default: 0, color: "#7f8c8d", tip: "Filter by air temperature score." },
-];
+// Active species config (set in init); FILTERS derives from it.
+let speciesConfig = null;
+let FILTERS = [];
 
 let map, markersLayer, heatLayer;
 let data = null;
@@ -43,6 +21,9 @@ let layerMode = "both"; // "both", "markers", "heat"
 
 async function init() {
   const species = getSpeciesFromURL();
+  speciesConfig = SPECIES[species];
+  // Hydrate FILTERS from species config — references FILTER_LIBRARY in species.js
+  FILTERS = speciesConfig.filters.map((k) => FILTER_LIBRARY[k]).filter(Boolean);
 
   // Load data — per-type JSON. Falls back to legacy latest.json (= morel alias).
   try {
@@ -221,7 +202,10 @@ function buildSliders() {
     const row = makeSlider(f.key, f.label, f.max, f.default || 0, f.tip);
     group.appendChild(row);
   }
-  group.appendChild(buildBurnTypeFilter());
+  // Burn-type chip row only applies to fire-associated species
+  if (speciesConfig.showBurnType) {
+    group.appendChild(buildBurnTypeFilter());
+  }
 }
 
 const BURN_TYPES = ["Machine Pile", "Hand Pile", "Pile Burn", "Underburn", "Broadcast", "RX", "wildfire"];
@@ -382,6 +366,37 @@ function setLayers(mode) {
 
 // ── Render ──
 
+function passesFilters(burn, day) {
+  const pd0 = (burn.phase_days || [])[selectedDay] || {};
+  const potential = burn.potential || 0;
+  const readiness0 = pd0.readiness || 0;
+
+  if (potential < (filters.potential || 0)) return false;
+  if (readiness0 < (filters.readiness || 0)) return false;
+
+  // Burn age filter (max — hide older than slider value)
+  if (filters.burn_age_max != null && burn.burn_age_months != null
+      && burn.burn_age_months > filters.burn_age_max) return false;
+
+  // Elevation min/max filters (porcini)
+  const elev = burn.elevation_ft;
+  if (elev != null) {
+    if (filters.elevation_min != null && elev < filters.elevation_min) return false;
+    if (filters.elevation_max != null && elev < 9000 && elev > filters.elevation_max) return false;
+  }
+
+  // Burn type filter (only applies when species shows burn types)
+  if (speciesConfig.showBurnType && !matchesBurnType(burn)) return false;
+
+  // Raw condition filters (from legacy day scores)
+  for (const f of FILTERS) {
+    const skip = ["potential", "readiness", "burn_age_max", "elevation_min", "elevation_max"];
+    if (skip.includes(f.key)) continue;
+    if (filters[f.key] && day[f.key] != null && day[f.key] < filters[f.key]) return false;
+  }
+  return true;
+}
+
 function render() {
   markersLayer.clearLayers();
   if (heatLayer) { map.removeLayer(heatLayer); heatLayer = null; }
@@ -391,65 +406,65 @@ function render() {
   let shown = 0, hidden = 0;
   const heatData = [];
 
+  // Pass 1: gather eligible burns. For "priority" render mode, also rank by
+  // (potential × readiness/100) so we can mark only the top-N as marker-eligible.
+  const eligible = [];
   for (let burnIdx = 0; burnIdx < data.burns.length; burnIdx++) {
     const burn = data.burns[burnIdx];
     const day = burn.days[selectedDay];
-    if (!day) continue;
+    if (!day) { hidden++; continue; }
+    if (!passesFilters(burn, day)) { hidden++; continue; }
+    eligible.push({ burn, day, burnIdx, score: prioritScore(burn, selectedDay) });
+  }
 
-    // Apply filters — potential and readiness
-    const pd0 = (burn.phase_days || [])[selectedDay] || {};
-    const potential = burn.potential || 0;
-    const readiness0 = pd0.readiness || 0;
+  // Mark which burns get clickable markers based on render mode
+  let markerSet;
+  if (speciesConfig.renderMode === "priority") {
+    const cap = speciesConfig.priorityCap || 50;
+    const topN = [...eligible].sort((a, b) => b.score - a.score).slice(0, cap);
+    markerSet = new Set(topN.map(e => e.burnIdx));
+  } else {
+    markerSet = null;  // null = all eligible get markers
+  }
 
-    if (potential < (filters.potential || 0)) { hidden++; continue; }
-    if (readiness0 < (filters.readiness || 0)) { hidden++; continue; }
-
-    // Burn age filter (max — hide older than slider value)
-    if (filters.burn_age_max != null && burn.burn_age_months != null
-        && burn.burn_age_months > filters.burn_age_max) { hidden++; continue; }
-
-    // Burn type filter
-    if (!matchesBurnType(burn)) { hidden++; continue; }
-
-    // Raw condition filters (from legacy day scores)
-    let filtered = false;
-    for (const f of FILTERS) {
-      if (f.key === "potential" || f.key === "readiness" || f.key === "burn_age_max") continue;
-      if (filters[f.key] && day[f.key] != null && day[f.key] < filters[f.key]) {
-        filtered = true;
-        break;
-      }
-    }
-    if (filtered) { hidden++; continue; }
-
+  // Pass 2: emit heat data + markers
+  for (const { burn, day, burnIdx } of eligible) {
     shown++;
 
     // Heatmap data — scatter points across burn acreage
-    const acres = burn.acres || 1;
+    const potential = burn.potential || 0;
     const weight = potential / 100;
-    const burnRadiusM = Math.sqrt(acres * 4047 / Math.PI);
-    const burnRadiusDeg = burnRadiusM / 111000;
-
-    heatData.push([burn.lat, burn.lon, weight * 3]);
-    if (acres >= 2) {
-      const nRing = Math.min(Math.max(6, Math.floor(acres / 2)), 16);
-      for (let i = 0; i < nRing; i++) {
-        const angle = (2 * Math.PI * i) / nRing;
-        heatData.push([
-          burn.lat + burnRadiusDeg * 0.5 * Math.sin(angle),
-          burn.lon + burnRadiusDeg * 0.5 * Math.cos(angle),
-          weight * 2.4,
-        ]);
+    if (speciesConfig.showBurnType) {
+      // Burn sites: scatter heat across the burn perimeter (acres = real fire area)
+      const acres = burn.acres || 1;
+      const burnRadiusM = Math.sqrt(acres * 4047 / Math.PI);
+      const burnRadiusDeg = burnRadiusM / 111000;
+      heatData.push([burn.lat, burn.lon, weight * 3]);
+      if (acres >= 2) {
+        const nRing = Math.min(Math.max(6, Math.floor(acres / 2)), 16);
+        for (let i = 0; i < nRing; i++) {
+          const angle = (2 * Math.PI * i) / nRing;
+          heatData.push([
+            burn.lat + burnRadiusDeg * 0.5 * Math.sin(angle),
+            burn.lon + burnRadiusDeg * 0.5 * Math.cos(angle),
+            weight * 2.4,
+          ]);
+        }
       }
+    } else {
+      // Stand sites (porcini): single point per cluster centroid. The
+      // "acres" field is a synthetic stand-size estimate, not a real
+      // perimeter — radial scatter would be misleading.
+      heatData.push([burn.lat, burn.lon, weight * 2]);
     }
 
-    // Marker (only if layerMode includes markers)
-    if (layerMode === "both" || layerMode === "markers") {
+    // Marker (only if layerMode includes markers AND this burn is in the marker set)
+    const inMarkerSet = markerSet === null || markerSet.has(burnIdx);
+    if (inMarkerSet && (layerMode === "both" || layerMode === "markers")) {
       // Color by phase (from phase_days for selected day)
       const pd = (burn.phase_days || [])[selectedDay] || {};
       const phase = pd.phase || "?";
       const readiness = pd.readiness || 0;
-      const potential = burn.potential || 0;
       const phaseColorMap = { EMERGING: "purple", GROWING: "green", WAITING: "orange", TOO_EARLY: "gray" };
       // Shape = potential (site quality), number inside = readiness
       const color = phaseColorMap[phase] || "orange";
@@ -535,8 +550,15 @@ function makePopup(burn, day, burnIdx) {
   const typeQS = species === "morel" ? "" : `&type=${species}`;
   html += `<h3 style="margin:0 0 4px;"><a href="detail.html?site=${burn.slug}&day=${selectedDay}${typeQS}" style="color:inherit;text-decoration:underline;" target="_blank">${burn.name}</a></h3>`;
   html += `<div style="font-size:11px;color:#888;margin-bottom:6px;">`;
-  html += `${(burn.acres||0).toFixed(0)}ac | ${burn.burn_type} | ${burn.elevation_ft?.toFixed(0)||"?"}ft`;
-  if (burn.slope != null) html += ` | ${burn.slope.toFixed(0)}deg ${aspectDir(burn.aspect)}`;
+  // Header strip: burn-specific for morel, vegetation-specific for porcini
+  const headerBits = [];
+  if (speciesConfig.showBurnType) {
+    headerBits.push(`${(burn.acres||0).toFixed(0)}ac`);
+    if (burn.burn_type) headerBits.push(burn.burn_type);
+  }
+  if (burn.elevation_ft) headerBits.push(`${burn.elevation_ft.toFixed(0)}ft`);
+  if (burn.slope != null) headerBits.push(`${burn.slope.toFixed(0)}° ${aspectDir(burn.aspect)}`);
+  html += headerBits.join(" | ");
   if (burn.evt_name) html += `<br>${burn.evt_name}`;
   html += ` | <a href="https://www.google.com/maps?q=${burn.lat},${burn.lon}" target="_blank" style="color:#53a8b6;">Map</a>`;
   html += `</div>`;
@@ -561,14 +583,16 @@ function makePopup(burn, day, burnIdx) {
   html += `</div>`;
   html += `<div style="font-size:10px;color:#888;line-height:1.4;">`;
   html += `${pd.grow_days || 0} grow / ${pd.start_days || 0} start days<br>`;
-  html += `Soil: ${day.soil_temp || "?"} | Age: ${day.burn_age || "?"}<br>`;
+  // Soil + (burn age | "primed?") depending on species
+  const ageBit = speciesConfig.showBurnType ? `Age: ${day.burn_age || "?"}` : "";
+  html += `Soil: ${day.soil_temp || "?"}${ageBit ? " | " + ageBit : ""}<br>`;
   if (day.snow_status) html += `${day.snow_status}`;
   html += `</div>`;
   html += `</div>`;
 
   // Key details — compact
   html += `<div style="margin-top:8px;font-size:11px;color:#888;line-height:1.6;">`;
-  const show = ["snow_status", "burn_age"];
+  const show = speciesConfig.showBurnType ? ["snow_status", "burn_age"] : ["snow_status"];
   for (const k of show) {
     if (day[k]) {
       const label = k.replace(/_/g, " ");
