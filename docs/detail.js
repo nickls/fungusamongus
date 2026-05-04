@@ -29,17 +29,33 @@ async function init() {
   const params = new URLSearchParams(window.location.search);
   const slug = params.get("site");
   const day = parseInt(params.get("day") || "0");
+  const SUPPORTED = ["morel", "porcini"];
+  const requestedType = params.get("type");
+  const species = SUPPORTED.includes(requestedType) ? requestedType : "morel";
+
+  // "Back to map" link should preserve species
+  const backLink = document.querySelector(".back");
+  if (backLink && species !== "morel") backLink.href = `index.html?type=${species}`;
 
   let data, historyData;
   try {
-    const [resp, histResp] = await Promise.all([
-      fetch("data/latest.json"),
-      fetch("data/history.json").catch(() => null),
+    const dataURL = species === "morel" ? "data/morel-latest.json" : `data/${species}-latest.json`;
+    const histURL = species === "morel" ? "data/morel-history.json" : `data/${species}-history.json`;
+    let [resp, histResp] = await Promise.all([
+      fetch(dataURL).catch(() => null),
+      fetch(histURL).catch(() => null),
     ]);
+    // Fall back to legacy unprefixed filenames (the morel alias)
+    if ((!resp || !resp.ok) && species === "morel") {
+      resp = await fetch("data/latest.json");
+      histResp = await fetch("data/history.json").catch(() => null);
+    }
+    if (!resp || !resp.ok) throw new Error(`HTTP ${resp ? resp.status : "?"}`);
     data = await resp.json();
-    historyData = histResp ? await histResp.json() : [];
+    historyData = histResp && histResp.ok ? await histResp.json() : [];
   } catch (e) {
-    document.getElementById("content").innerHTML = "<p>No data. Run morel_finder.py first.</p>";
+    document.getElementById("content").innerHTML =
+      `<p>No ${species} data. Run <code>python morel_finder.py --mushroom-type=${species}</code> first.</p>`;
     return;
   }
 

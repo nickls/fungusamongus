@@ -1,8 +1,24 @@
-// Morel Foraging SPA — loads scored burn data, renders map with day picker + filter sliders
+// Foraging SPA — loads scored data per mushroom type, renders map.
+// Type is selected via the species buttons or ?type= URL param. Default: morel.
 
 const ALDER_CREEK = [39.3187, -120.2125];
 const LOCAL_BOUNDS = [[39.0, -120.65], [39.65, -119.75]];
 const BASIN_BOUNDS = [[38.5, -121.3], [39.9, -119.3]];
+
+const SUPPORTED_SPECIES = ["morel", "porcini"];
+
+function getSpeciesFromURL() {
+  const t = new URLSearchParams(window.location.search).get("type");
+  return SUPPORTED_SPECIES.includes(t) ? t : "morel";
+}
+
+function selectSpecies(species) {
+  if (!SUPPORTED_SPECIES.includes(species)) return;
+  const url = new URL(window.location.href);
+  if (species === "morel") url.searchParams.delete("type");
+  else url.searchParams.set("type", species);
+  window.location.href = url.toString();
+}
 
 const FILTERS = [
   // Phase scores
@@ -26,15 +42,27 @@ let layerMode = "both"; // "both", "markers", "heat"
 // ── Init ──
 
 async function init() {
-  // Load data
+  const species = getSpeciesFromURL();
+
+  // Load data — per-type JSON. Falls back to legacy latest.json (= morel alias).
   try {
-    const resp = await fetch("data/latest.json");
+    const url = species === "morel"
+      ? "data/morel-latest.json"
+      : `data/${species}-latest.json`;
+    let resp = await fetch(url);
+    if (!resp.ok && species === "morel") resp = await fetch("data/latest.json");
+    if (!resp.ok) throw new Error(`HTTP ${resp.status} for ${url}`);
     data = await resp.json();
   } catch (e) {
     document.getElementById("sidebar").innerHTML =
-      "<h1>No data</h1><p>Run <code>python morel_finder.py</code> first.</p>";
+      `<h1>No ${species} data</h1><p>Run <code>python morel_finder.py --mushroom-type=${species}</code> first.</p>`;
     return;
   }
+
+  // Sync active species button to URL
+  document.querySelectorAll(".species-btn").forEach((btn) => {
+    btn.classList.toggle("active", btn.dataset.species === species);
+  });
 
   // Set metadata
   document.getElementById("run-date").textContent = data.run_date;
@@ -503,7 +531,9 @@ function makePopup(burn, day, burnIdx) {
 
   // Header — name links to detail page
   let html = `<div class="burn-popup" style="min-width:280px;max-width:340px;">`;
-  html += `<h3 style="margin:0 0 4px;"><a href="detail.html?site=${burn.slug}&day=${selectedDay}" style="color:inherit;text-decoration:underline;" target="_blank">${burn.name}</a></h3>`;
+  const species = data.mushroom_type || "morel";
+  const typeQS = species === "morel" ? "" : `&type=${species}`;
+  html += `<h3 style="margin:0 0 4px;"><a href="detail.html?site=${burn.slug}&day=${selectedDay}${typeQS}" style="color:inherit;text-decoration:underline;" target="_blank">${burn.name}</a></h3>`;
   html += `<div style="font-size:11px;color:#888;margin-bottom:6px;">`;
   html += `${(burn.acres||0).toFixed(0)}ac | ${burn.burn_type} | ${burn.elevation_ft?.toFixed(0)||"?"}ft`;
   if (burn.slope != null) html += ` | ${burn.slope.toFixed(0)}deg ${aspectDir(burn.aspect)}`;
