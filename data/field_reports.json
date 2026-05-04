@@ -62,6 +62,38 @@
     }
   },
   {
+    "id": "FR-003",
+    "date": "2026-05-03",
+    "observer": "nickls",
+    "site": "Unit 2.6 (Underburn)",
+    "site_slug": "unit-2-6-underburn-2025",
+    "lat": null,
+    "lon": null,
+    "burn_type": "Underburn",
+    "burn_age_months": 6.9,
+    "burn_date": "2025-10-08",
+    "acres": 12.7,
+    "elevation_ft": null,
+    "morels_found": "~2lbs",
+    "morel_size": "smaller",
+    "conditions": {
+      "snow": "snow-free",
+      "vegetation": "Mediterranean California Mesic Mixed Conifer Forest and Woodland",
+      "notes": "5 days after the Unit 2.3 4-5lb haul. Adjacent burn unit, same age, same vegetation. Found ~2lbs but morels were smaller — possibly late-season flush, possibly foraging pressure from adjacent units. Confirms the Unit 2.x cluster as productive but suggests morels are getting smaller as season progresses in this microclimate."
+    },
+    "model_validation": {
+      "predicted_phase": "EMERGING",
+      "predicted_readiness": 100,
+      "predicted_potential": 70,
+      "outcome": "positive (reduced)",
+      "lessons": [
+        "Same-cluster, same-age sites can both produce — but yield diminishes over days as a flush plays out",
+        "Morels getting smaller may indicate end of primary flush",
+        "Consider tracking 'days since cluster first picked' to predict size/yield decay"
+      ]
+    }
+  },
+  {
     "id": "FR-002b",
     "date": "2026-04-29",
     "observer": "nickls",

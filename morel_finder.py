@@ -95,26 +95,71 @@ def score_site(site, mushroom_type="morel"):
     timeline, reasons = build_timeline(weather, config)
     potential = score_potential(fire, elev, terrain, mushroom_type, evt=evt)
 
+    # Compute raw readiness + phase for EVERY day in the 44-day timeline.
+    raw_readiness = []
+    daily_phase = []
+    daily_features = []
+    for i in range(len(timeline)):
+        feats = extract_features(timeline, weather, i, config)
+        raw_readiness.append(score_readiness(feats, config))
+        daily_phase.append(classify_phase(feats, config))
+        daily_features.append(feats)
+
+    # Anti-whiplash ratchet: existing morels persist 7-14 days; if the site
+    # had high readiness recently, today's reading should be floored by the
+    # decayed peak. Decay 0.93/day → ~half-life of 9.5 days, matching
+    # observed field persistence of morels (rather than emergence rate).
+    DECAY = 0.93
+    LOOKBACK = 14
+    ratcheted_readiness = []
+    for i in range(len(raw_readiness)):
+        floor = 0
+        for back in range(1, LOOKBACK + 1):
+            j = i - back
+            if j < 0:
+                break
+            decayed = raw_readiness[j] * (DECAY ** back)
+            if decayed > floor:
+                floor = decayed
+        ratcheted_readiness.append(max(raw_readiness[i], round(floor)))
+
+    # Days harvestable: consecutive days ending at i where ratcheted readiness >= 50.
+    # Higher value = mushrooms have been harvestable longer = more picked-over risk.
+    HARVEST_THRESH = 50
+    days_harvestable = []
+    streak = 0
+    for r in ratcheted_readiness:
+        if r >= HARVEST_THRESH:
+            streak += 1
+        else:
+            streak = 0
+        days_harvestable.append(streak)
+
     phase_days = []
     for d in range(8):
         target = 30 + d  # 30 = today in 44-day timeline
-        features = extract_features(timeline, weather, target, config)
-        readiness = score_readiness(features)
-        phase = classify_phase(features)
+        if target >= len(timeline):
+            break
+        feats = daily_features[target]
         phase_days.append({
             "day": d,
-            "readiness": readiness,
-            "phase": phase,
-            "status": timeline[target] if target < len(timeline) else "BAD",
-            "start_days": features["start_days"],
-            "grow_days": features["grow_days"],
-            "max_bad_streak": features["max_bad_streak"],
+            "readiness": ratcheted_readiness[target],
+            "readiness_raw": raw_readiness[target],
+            "days_harvestable": days_harvestable[target],
+            "phase": daily_phase[target],
+            "status": timeline[target],
+            "start_days": feats["start_days"],
+            "grow_days": feats["grow_days"],
+            "max_bad_streak": feats["max_bad_streak"],
         })
 
     return {"zone": zone, "fire": fire, "weather": weather,
             "result": result, "day_scores": day_scores,
             "potential": potential, "timeline": timeline,
-            "timeline_reasons": reasons, "phase_days": phase_days}
+            "timeline_reasons": reasons, "phase_days": phase_days,
+            "readiness_timeline": ratcheted_readiness,
+            "raw_readiness_timeline": raw_readiness,
+            "days_harvestable_timeline": days_harvestable}
 
 
 def export_json(results, run_date):
@@ -195,6 +240,9 @@ def export_json(results, run_date):
             "potential_scores": pot.get("scores", {}),
             "timeline": tl,
             "timeline_reasons": tl_reasons,
+            "readiness_timeline": r.get("readiness_timeline", []),
+            "raw_readiness_timeline": r.get("raw_readiness_timeline", []),
+            "days_harvestable_timeline": r.get("days_harvestable_timeline", []),
             "phase_days": phase_days,
             # Legacy per-day scores
             "days": days,

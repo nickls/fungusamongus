@@ -23,6 +23,26 @@
     .detail-item .value { font-size: 13px; font-weight: bold; margin-top: 1px; }
     .back { display: inline-block; margin-bottom: 12px; font-size: 13px; }
 
+    .tl-strip { display: flex; gap: 1px; height: 24px; }
+    .tl-cell { flex: 1; border-radius: 2px; cursor: pointer; transition: filter 0.1s; }
+    .tl-cell:hover { filter: brightness(1.4); outline: 1px solid rgba(255,255,255,0.6); }
+
+    .tl-pop {
+      position: fixed; pointer-events: none; z-index: 200;
+      background: #0f1d34; border: 1px solid #53a8b6;
+      border-radius: 8px; padding: 10px 12px 9px;
+      min-width: 200px; max-width: 280px;
+      box-shadow: 0 8px 24px rgba(0,0,0,0.6);
+      color: #e0e0e0; font-size: 12px; line-height: 1.45;
+      display: none;
+    }
+    .tl-pop.open { display: block; }
+    .tl-pop .tt-date { color: #888; font-size: 10px; }
+    .tl-pop .tt-status { font-weight: bold; font-size: 16px; margin: 1px 0 4px; letter-spacing: 0.3px; }
+    .tl-pop .tt-reason { color: #ccc; font-size: 11px; margin-bottom: 7px; padding-bottom: 6px; border-bottom: 1px solid #1f3556; }
+    .tl-pop .tt-stats { display: grid; grid-template-columns: 1fr 1fr; gap: 4px 12px; font-size: 10px; color: #888; }
+    .tl-pop .tt-stats b { color: #e0e0e0; font-weight: 600; font-size: 11px; }
+
     @media (max-width: 600px) {
       .two-col { grid-template-columns: 1fr; }
       .details-grid { grid-template-columns: 1fr 1fr; }
@@ -269,18 +289,14 @@ async function init() {
   if (tl.length > 0) {
     const statusColors = { START: "#27ae60", START_GROW: "#2ecc71", GROW: "#3498db", BAD: "#e74c3c" };
     html += `<div class="card">`;
-    html += `<h3>44-Day Timeline — <span style="color:#27ae60">START</span> <span style="color:#3498db">GROW</span> <span style="color:#e74c3c">BAD</span></h3>`;
-    html += `<div style="display:flex;gap:1px;height:24px;">`;
+    html += `<h3>44-Day Timeline — <span style="color:#27ae60">START</span> <span style="color:#3498db">GROW</span> <span style="color:#e74c3c">BAD</span> <span style="color:#666;font-weight:normal;font-size:10px;margin-left:6px;">hover a day for why</span></h3>`;
+    html += `<div class="tl-strip" id="tl-strip">`;
     const tlRunDate = new Date(data.run_date + "T12:00:00");
     for (let i = 0; i < tl.length; i++) {
       const c = statusColors[tl[i]] || "#333";
       const isToday = i === 30;
       const border = isToday ? "outline:2px solid #e94560;" : "";
-      const tlDate = new Date(tlRunDate);
-      tlDate.setDate(tlDate.getDate() + (i - 30));
-      const reason = tlReasons[i] ? ` — ${tlReasons[i]}` : "";
-      const tlLabel = `${dayNames[tlDate.getDay()]} ${monthNames[tlDate.getMonth()]} ${tlDate.getDate()}: ${tl[i]}${reason}`.replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-      html += `<div style="flex:1;background:${c};border-radius:2px;${border}" title="${tlLabel}"></div>`;
+      html += `<div class="tl-cell" data-i="${i}" style="background:${c};${border}"></div>`;
     }
     html += `</div>`;
     // Day-of-week labels at weekly intervals
@@ -321,6 +337,7 @@ async function init() {
 
   html += `<div class="card" style="margin-top:8px;"><canvas id="weatherChart"></canvas></div>`;
   html += `<div class="card" style="margin-top:8px;height:250px;"><canvas id="warmingChart"></canvas></div>`;
+  html += `<div class="card" style="margin-top:8px;height:250px;"><canvas id="readinessChart"></canvas></div>`;
 
   html += `</div>`; // end conditions section
 
@@ -385,6 +402,82 @@ async function init() {
   // RENDER + CHARTS
   // ════════════════════════════════════════════════════════════════
   document.getElementById("content").innerHTML = html;
+
+  // Timeline floating tooltip — hover a day to see why it's START / GROW / BAD
+  (function wireTimelinePop() {
+    const strip = document.getElementById("tl-strip");
+    if (!strip || !tl.length) return;
+
+    const pop = document.createElement("div");
+    pop.className = "tl-pop";
+    pop.innerHTML = `<div class="tt-date"></div><div class="tt-status"></div><div class="tt-reason"></div><div class="tt-stats"></div>`;
+    document.body.appendChild(pop);
+    const elDate = pop.querySelector(".tt-date");
+    const elStatus = pop.querySelector(".tt-status");
+    const elReason = pop.querySelector(".tt-reason");
+    const elStats = pop.querySelector(".tt-stats");
+
+    const STATUS_COLOR = { START: "#27ae60", START_GROW: "#2ecc71", GROW: "#3498db", BAD: "#e74c3c" };
+    const histSoil = (burn.history && burn.history.hist_soil_temp) || [];
+    const fcSoil = (burn.history && burn.history.forecast_soil_temp) || [];
+    const histPrecip = (burn.history && burn.history.hist_precip) || [];
+    const fcSnow = (burn.history && burn.history.forecast_snow_depth) || [];
+    const readyTL = burn.readiness_timeline || [];
+    const runDate = new Date(data.run_date + "T12:00:00");
+
+    function fill(cell) {
+      const i = parseInt(cell.dataset.i);
+      if (isNaN(i)) return;
+      const dt = new Date(runDate);
+      dt.setDate(dt.getDate() + (i - 30));
+      const dateLabel = `${dayNames[dt.getDay()]}, ${monthNames[dt.getMonth()]} ${dt.getDate()}`;
+      const isToday = i === 30, isFuture = i > 30;
+      const tag = isToday ? ` <span style="color:#e94560;">(today)</span>`
+                : isFuture ? ` <span style="color:#888;">(forecast)</span>`
+                : ` <span style="color:#888;">(${30 - i}d ago)</span>`;
+      const status = tl[i];
+      const reason = tlReasons[i] || "";
+      const soil = i < 30 ? histSoil[i] : fcSoil[i - 30];
+      const precip = i < 30 ? histPrecip[i] : null;
+      const snow = i >= 30 ? fcSnow[i - 30] : null;
+      const ready = readyTL[i];
+
+      elDate.innerHTML = dateLabel + tag;
+      elStatus.textContent = status;
+      elStatus.style.color = STATUS_COLOR[status] || "#888";
+      elReason.textContent = reason;
+      elReason.style.display = reason ? "block" : "none";
+
+      const stats = [];
+      if (soil != null) stats.push(["Soil", `${soil.toFixed(0)}F`]);
+      if (ready != null) stats.push(["Readiness", `${ready}`]);
+      if (precip != null) stats.push(["Rain", precip > 0 ? `${precip.toFixed(2)}in` : "—"]);
+      if (snow != null && snow > 0) stats.push(["Snow", `${snow.toFixed(1)}in`]);
+      elStats.innerHTML = stats.map(([k, v]) => `<div>${k} <b>${v}</b></div>`).join("");
+    }
+    function place(ev) {
+      const pad = 10, w = pop.offsetWidth, h = pop.offsetHeight;
+      let x = ev.clientX + 14, y = ev.clientY + 14;
+      if (x + w + pad > window.innerWidth) x = ev.clientX - w - 14;
+      if (y + h + pad > window.innerHeight) y = ev.clientY - h - 14;
+      pop.style.left = Math.max(pad, x) + "px";
+      pop.style.top = Math.max(pad, y) + "px";
+    }
+    strip.addEventListener("mouseover", (ev) => {
+      const cell = ev.target.closest(".tl-cell");
+      if (!cell) return;
+      fill(cell);
+      pop.classList.add("open");
+      place(ev);
+    });
+    strip.addEventListener("mousemove", (ev) => {
+      if (!pop.classList.contains("open")) return;
+      const cell = ev.target.closest(".tl-cell");
+      if (cell) fill(cell);
+      place(ev);
+    });
+    strip.addEventListener("mouseleave", () => pop.classList.remove("open"));
+  })();
 
   // Chart.js — weather
   const soilHist = h.hist_soil_temp || [];
@@ -470,6 +563,50 @@ async function init() {
         scales: {
           x: { ticks: { color: "#666", font: { size: 8 }, maxRotation: 0 }, grid: { color: "#0f3460" } },
           y: { ticks: { color: "#888", font: { size: 9 } }, grid: { color: "#0f3460" }, min: -3, max: 3 },
+        },
+      },
+    });
+  }
+
+  // Readiness chart — ratcheted readiness vs raw vs days harvestable
+  const readyCtx = document.getElementById("readinessChart");
+  const readyTL = burn.readiness_timeline || [];
+  const rawReadyTL = burn.raw_readiness_timeline || [];
+  const harvestTL = burn.days_harvestable_timeline || [];
+  if (readyCtx && readyTL.length) {
+    new Chart(readyCtx, {
+      data: {
+        labels,
+        datasets: [
+          {
+            type: "line", label: "Readiness (anti-whiplash)", data: readyTL,
+            borderColor: "#e94560", backgroundColor: "rgba(233,69,96,0.15)",
+            fill: true, tension: 0.3, pointRadius: 0, borderWidth: 2, yAxisID: "yScore",
+          },
+          {
+            type: "line", label: "Raw readiness", data: rawReadyTL,
+            borderColor: "#888", borderDash: [4, 3], borderWidth: 1.5,
+            fill: false, tension: 0.3, pointRadius: 0, yAxisID: "yScore",
+          },
+          {
+            type: "bar", label: "Days harvestable", data: harvestTL,
+            backgroundColor: "rgba(243,156,18,0.5)", borderRadius: 2,
+            barPercentage: 0.9, yAxisID: "yDays", order: 10,
+          },
+        ],
+      },
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        interaction: { mode: "index", intersect: false },
+        plugins: {
+          legend: { labels: { color: "#aaa", font: { size: 11 } } },
+          title: { display: true, text: "Readiness over time — anti-whiplash floor + days harvestable", color: "#888", font: { size: 11 } },
+          tooltip: { callbacks: { title: (items) => items.length ? fullLabels[items[0].dataIndex] || "" : "" } },
+        },
+        scales: {
+          x: { ticks: { color: "#666", font: { size: 8 }, maxRotation: 0 }, grid: { color: "#0f3460" } },
+          yScore: { type: "linear", position: "left", title: { display: true, text: "Readiness (0-100)", color: "#e94560" }, ticks: { color: "#888" }, grid: { color: "#0f3460" }, min: 0, max: 100 },
+          yDays: { type: "linear", position: "right", title: { display: true, text: "Days harvestable", color: "#f39c12" }, ticks: { color: "#888" }, grid: { drawOnChartArea: false }, min: 0 },
         },
       },
     });
