@@ -23,40 +23,34 @@ EVT_IMAGESERVER = (
     "Landfire_LF2024/LF2024_EVT_CONUS/ImageServer"
 )
 
+# LF2020 topo rasters — elevation (m), aspect (degrees), slope (degrees)
+TOPO_BASE = "https://lfps.usgs.gov/arcgis/rest/services/Landfire_Topo"
+ELEV_IMAGESERVER  = f"{TOPO_BASE}/LF2020_Elev_CONUS/ImageServer"
+ASPECT_IMAGESERVER = f"{TOPO_BASE}/LF2020_Asp_CONUS/ImageServer"
+SLOPE_IMAGESERVER = f"{TOPO_BASE}/LF2020_SlpD_CONUS/ImageServer"
 
-def download_evt_raster(bbox, output_path, resolution_m=30):
-    """
-    Download a clipped EVT GeoTIFF for the given bbox.
 
-    Args:
-        bbox: (min_lon, min_lat, max_lon, max_lat) in WGS84 decimal degrees
-        output_path: Path to write the GeoTIFF
-        resolution_m: target pixel resolution in meters (LANDFIRE native = 30)
-
-    Returns the output path.
-    """
+def _download_raster(image_server, bbox, output_path, resolution_m,
+                     pixel_type, interpolation, label):
+    """Generic LANDFIRE ImageServer raster download via exportImage."""
     output_path = Path(output_path)
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
     min_lon, min_lat, max_lon, max_lat = bbox
 
-    # Convert bbox span to pixel dimensions at target resolution.
-    # Approximate: 1 degree latitude ≈ 111km. 1 degree longitude varies with
-    # latitude — at Tahoe ~39N, 1° lon ≈ 86km. Good enough for sizing.
-    mid_lat = (min_lat + max_lat) / 2
     import math
+    mid_lat = (min_lat + max_lat) / 2
     height_m = (max_lat - min_lat) * 111_000
     width_m = (max_lon - min_lon) * 111_000 * math.cos(math.radians(mid_lat))
     width_px = int(width_m / resolution_m)
     height_px = int(height_m / resolution_m)
 
-    # ImageServer cap is 4100x4100 in some configs; clamp defensively.
     cap = 4000
     if width_px > cap or height_px > cap:
         scale = max(width_px / cap, height_px / cap)
         width_px = int(width_px / scale)
         height_px = int(height_px / scale)
-        print(f"  bbox too big at {resolution_m}m — scaled to {width_px}x{height_px}")
+        print(f"  {label}: bbox too big at {resolution_m}m — scaled to {width_px}x{height_px}")
 
     params = {
         "bbox": f"{min_lon},{min_lat},{max_lon},{max_lat}",
@@ -64,23 +58,62 @@ def download_evt_raster(bbox, output_path, resolution_m=30):
         "imageSR": "4326",
         "size": f"{width_px},{height_px}",
         "format": "tiff",
-        "pixelType": "U16",
-        "interpolation": "RSP_NearestNeighbor",  # categorical raster — never interpolate
+        "pixelType": pixel_type,
+        "interpolation": interpolation,
         "f": "image",
     }
 
     import requests
-    url = f"{EVT_IMAGESERVER}/exportImage"
-    print(f"  downloading EVT raster {width_px}x{height_px} for bbox {bbox}")
-    r = requests.get(url, params=params, timeout=120)
+    url = f"{image_server}/exportImage"
+    print(f"  {label}: downloading {width_px}x{height_px} for bbox {bbox}")
+    r = requests.get(url, params=params, timeout=180)
     r.raise_for_status()
     if not r.headers.get("Content-Type", "").startswith("image"):
-        # ArcGIS may return JSON error instead of an image
         raise RuntimeError(f"expected image, got {r.headers.get('Content-Type')}: {r.text[:300]}")
     output_path.write_bytes(r.content)
     size_kb = output_path.stat().st_size / 1024
-    print(f"  wrote {output_path} ({size_kb:.0f}KB)")
+    print(f"  {label}: wrote {output_path} ({size_kb:.0f}KB)")
     return output_path
+
+
+def download_evt_raster(bbox, output_path, resolution_m=30):
+    """Categorical EVT raster — never interpolate."""
+    return _download_raster(
+        EVT_IMAGESERVER, bbox, output_path, resolution_m,
+        pixel_type="U16", interpolation="RSP_NearestNeighbor", label="EVT")
+
+
+def download_elevation_raster(bbox, output_path, resolution_m=100):
+    """LANDFIRE elevation in meters. Bilinear is fine for continuous data."""
+    return _download_raster(
+        ELEV_IMAGESERVER, bbox, output_path, resolution_m,
+        pixel_type="S16", interpolation="RSP_BilinearInterpolation", label="ELEV")
+
+
+def download_aspect_raster(bbox, output_path, resolution_m=100):
+    """LANDFIRE aspect in degrees clockwise from north (0–360, -1 for flat)."""
+    return _download_raster(
+        ASPECT_IMAGESERVER, bbox, output_path, resolution_m,
+        pixel_type="S16", interpolation="RSP_NearestNeighbor", label="ASPECT")
+
+
+def download_slope_raster(bbox, output_path, resolution_m=100):
+    """LANDFIRE slope in degrees (0–90)."""
+    return _download_raster(
+        SLOPE_IMAGESERVER, bbox, output_path, resolution_m,
+        pixel_type="U8", interpolation="RSP_BilinearInterpolation", label="SLOPE")
+
+
+def sample_at(raster_path, lat, lon):
+    """Read raster value at a single (lat, lon). Returns None on miss."""
+    with rasterio.open(raster_path) as src:
+        try:
+            row, col = src.index(lon, lat)
+            if 0 <= row < src.height and 0 <= col < src.width:
+                return src.read(1)[row, col]
+        except Exception:
+            pass
+    return None
 
 
 def iter_evt_grid(raster_path, stride=1):

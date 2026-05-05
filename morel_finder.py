@@ -319,7 +319,28 @@ def main():
         wf = len(sites) - rx
         print(f"  {rx} RX burns, {wf} wildfires")
 
-    # Step 2: Score each site (weather only — static data from catalog)
+    # Step 2a: Pre-rank by static potential (vegetation + elevation + aspect
+    # + season — no weather needed). For species with huge catalogs (porcini
+    # can have ~10k stand candidates), cap to top-N before fetching weather
+    # to keep the output JSON manageable. Morel has a smaller catalog so the
+    # cap doesn't bind.
+    max_sites = profile.get("max_scored_sites")
+    if max_sites and len(sites) > max_sites:
+        print(f"\n[2a/3] Pre-ranking {len(sites)} sites by static potential (no weather)...")
+        scored = []
+        for s in sites:
+            fire = site_to_fire(s)
+            evt = {"evt_code": s.get("evt_code"), "evt_name": s.get("evt_name", "Unknown"),
+                   "evt_suitability": s.get("evt_suitability")}
+            terrain = {"slope": s.get("slope"), "aspect": s.get("aspect")}
+            pot = score_potential(fire, s.get("elevation_ft"), terrain, mushroom_type, evt=evt)
+            scored.append((pot.get("potential", 0), s))
+        scored.sort(key=lambda t: t[0], reverse=True)
+        sites = [s for _, s in scored[:max_sites]]
+        print(f"  kept top {len(sites)} by static potential (min={scored[max_sites-1][0]}, "
+              f"max={scored[0][0]})")
+
+    # Step 2b: Score each kept site with full weather + phase + readiness
     print(f"\n[2/3] Scoring {len(sites)} sites (fetching weather)...")
     results = []
     with ThreadPoolExecutor(max_workers=6) as pool:
@@ -330,8 +351,6 @@ def main():
                 if not r:
                     continue
                 # Keep result if EITHER legacy or phase scoring shows non-zero.
-                # Legacy scoring is morel-shaped — non-morel species often score
-                # 0 there but have valid phase potential.
                 legacy_total = r["result"]["total"]
                 phase_potential = r.get("potential", {}).get("potential", 0)
                 if legacy_total > 0 or phase_potential > 0:

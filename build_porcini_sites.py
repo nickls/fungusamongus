@@ -26,22 +26,32 @@ import json
 import math
 import re
 from collections import defaultdict
-from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
 from pathlib import Path
 
-from utils.elevation import get_elevation_ft, get_best_aspect
+import rasterio
 from utils.landfire import EVT_LOOKUP
-from utils.landfire_raster import download_evt_raster, iter_evt_grid
+from utils.landfire_raster import (
+    download_evt_raster, iter_evt_grid,
+    download_elevation_raster, download_aspect_raster, download_slope_raster,
+)
 
 
-# Tahoe Basin AOI — generous bbox, will filter further by elevation
-TAHOE_BBOX = (-120.30, 38.80, -119.85, 39.40)
+# AOI — matches the morel SEARCH_RADIUS_KM (~120km) coverage so both species
+# show the same geographic extent. Wider than just the basin.
+TAHOE_BBOX = (-121.6, 38.2, -119.2, 40.4)
 RASTER_PATH = Path("data/raster/tahoe_evt.tif")
+ELEV_RASTER_PATH = Path("data/raster/tahoe_elev.tif")
+ASPECT_RASTER_PATH = Path("data/raster/tahoe_aspect.tif")
+SLOPE_RASTER_PATH = Path("data/raster/tahoe_slope.tif")
 OUTPUT_PATH = Path("data/porcini_sites.json")
 
-# Sampling: stride=10 on a 30m raster ≈ 300m grid (fine enough for stand detection)
-SAMPLE_STRIDE = 10
+# Native LANDFIRE resolution is 30m, but at the wider AOI that exceeds
+# ArcGIS exportImage's 4000x4000 pixel cap. 100m is plenty for visualization.
+RASTER_RESOLUTION_M = 100
+
+# Sampling stride on the raster grid. At 100m raster, stride=3 ≈ 300m grid.
+SAMPLE_STRIDE = 3
 
 # EVT suitability threshold — anything ≥ 0.5 is potentially porcini habitat.
 # Lower threshold than morel because porcini cluster in stands, not at burns,
@@ -57,7 +67,9 @@ PORCINI_ELEV_MAX_FT = 8500
 PORCINI_SLOPE_MIN_DEG = 0
 PORCINI_SLOPE_MAX_DEG = 35
 
-# Cluster radius for grouping pixels into stand-level candidates
+# Cluster radius for grouping pixels into stand-level candidates. ~500m is
+# the right scale for "one mature conifer grove" — coarser merges adjacent
+# distinct stands. Slow builds are fine; the catalog gets cached.
 CLUSTER_BIN_DEG = 0.005  # ~500m at this latitude
 
 
@@ -125,15 +137,36 @@ def cluster_pixels(pixels):
     return clusters
 
 
-def enrich_cluster(cluster):
-    """Add elevation, slope, aspect via USGS EPQS (cached)."""
-    lat, lon = cluster["lat"], cluster["lon"]
-    elev = get_elevation_ft(lat, lon)
-    terrain = get_best_aspect(lat, lon) or {}
-    cluster["elevation_ft"] = round(elev, 1) if elev else None
-    cluster["slope"] = terrain.get("slope")
-    cluster["aspect"] = terrain.get("aspect")
-    return cluster
+def enrich_clusters_from_rasters(clusters, elev_path, aspect_path, slope_path):
+    """Read elevation/slope/aspect for every cluster centroid in one pass
+    by sampling the LANDFIRE topo rasters locally. No API calls, no rate
+    limits — just numpy indexing.
+    """
+    with rasterio.open(elev_path) as elev_src, \
+         rasterio.open(aspect_path) as aspect_src, \
+         rasterio.open(slope_path) as slope_src:
+        elev_band = elev_src.read(1)
+        aspect_band = aspect_src.read(1)
+        slope_band = slope_src.read(1)
+        for c in clusters:
+            lat, lon = c["lat"], c["lon"]
+            try:
+                er, ec = elev_src.index(lon, lat)
+                ar, ac = aspect_src.index(lon, lat)
+                sr, sc = slope_src.index(lon, lat)
+                if 0 <= er < elev_src.height and 0 <= ec < elev_src.width:
+                    elev_m = float(elev_band[er, ec])
+                    # Negative or zero = nodata
+                    c["elevation_ft"] = round(elev_m * 3.28084, 1) if elev_m > 0 else None
+                if 0 <= ar < aspect_src.height and 0 <= ac < aspect_src.width:
+                    asp = int(aspect_band[ar, ac])
+                    c["aspect"] = asp if 0 <= asp <= 360 else None
+                if 0 <= sr < slope_src.height and 0 <= sc < slope_src.width:
+                    slope = int(slope_band[sr, sc])
+                    c["slope"] = slope if 0 <= slope <= 90 else None
+            except Exception as e:
+                pass
+    return clusters
 
 
 def passes_terrain_filter(cluster):
@@ -172,7 +205,7 @@ def cluster_to_site(cluster, slug):
         "source": "LANDFIRE EVT cluster",
         "lat": cluster["lat"],
         "lon": cluster["lon"],
-        "acres": round(cluster["pixel_count"] * (30 * SAMPLE_STRIDE) ** 2 / 4046.86, 1),  # approx, m²→acres
+        "acres": round(cluster["pixel_count"] * (RASTER_RESOLUTION_M * SAMPLE_STRIDE) ** 2 / 4046.86, 1),  # approx, m²→acres
         "date": None,        # no burn date — porcini are mycorrhizal
         "is_rx": False,
         "burn_type": "",
@@ -198,14 +231,21 @@ def main():
     print("PORCINI SITE CATALOG BUILDER")
     print("=" * 60)
 
-    # Step 0: ensure raster exists
-    if args.fetch_raster or not RASTER_PATH.exists():
-        print(f"\n[0/4] Downloading EVT raster for Tahoe Basin {TAHOE_BBOX}...")
-        download_evt_raster(TAHOE_BBOX, RASTER_PATH, resolution_m=30)
-    else:
-        size_kb = RASTER_PATH.stat().st_size / 1024
-        print(f"\n[0/4] Using existing raster {RASTER_PATH} ({size_kb:.0f}KB)")
-        print(f"      (use --fetch-raster to re-download)")
+    # Step 0: ensure all four rasters exist (EVT, elev, aspect, slope).
+    # Downloaded once from LANDFIRE LFPS; sampling is local from then on.
+    rasters = [
+        ("EVT", RASTER_PATH, download_evt_raster),
+        ("Elevation", ELEV_RASTER_PATH, download_elevation_raster),
+        ("Aspect", ASPECT_RASTER_PATH, download_aspect_raster),
+        ("Slope", SLOPE_RASTER_PATH, download_slope_raster),
+    ]
+    print(f"\n[0/4] Ensuring rasters exist for AOI {TAHOE_BBOX}...")
+    for label, path, downloader in rasters:
+        if args.fetch_raster or not path.exists():
+            downloader(TAHOE_BBOX, path, resolution_m=RASTER_RESOLUTION_M)
+        else:
+            size_kb = path.stat().st_size / 1024
+            print(f"  {label}: using existing {path} ({size_kb:.0f}KB)")
 
     # Step 1: sample raster, filter to suitable EVT codes
     print(f"\n[1/4] Sampling raster and filtering by EVT...")
@@ -218,20 +258,14 @@ def main():
     print(f"\n[2/4] Clustering pixels into stands ({CLUSTER_BIN_DEG:.4f}° bins)...")
     clusters = cluster_pixels(pixels)
 
-    # Step 3: enrich centroids with elevation/slope/aspect (existing cached APIs)
-    print(f"\n[3/4] Enriching {len(clusters)} cluster centroids (USGS EPQS, cached)...")
-    enriched = []
-    done = 0
-    with ThreadPoolExecutor(max_workers=8) as pool:
-        futures = {pool.submit(enrich_cluster, c): c for c in clusters}
-        for fut in as_completed(futures):
-            try:
-                enriched.append(fut.result())
-                done += 1
-                if done % 50 == 0:
-                    print(f"  {done}/{len(clusters)}...")
-            except Exception as e:
-                print(f"  [error] {e}")
+    # Step 3: enrich centroids with elevation/slope/aspect from LANDFIRE
+    # topo rasters (already downloaded in step 0). Pure local sampling — no
+    # API calls, no rate limits.
+    print(f"\n[3/4] Sampling elevation/aspect/slope rasters at {len(clusters)} centroids...")
+    enriched = enrich_clusters_from_rasters(
+        clusters, ELEV_RASTER_PATH, ASPECT_RASTER_PATH, SLOPE_RASTER_PATH)
+    have_elev = sum(1 for c in enriched if c.get("elevation_ft") is not None)
+    print(f"  {have_elev}/{len(enriched)} have elevation data")
 
     # Step 4: filter by elevation/slope, assign slugs, write
     print(f"\n[4/4] Applying terrain filters ({PORCINI_ELEV_MIN_FT}-{PORCINI_ELEV_MAX_FT}ft, "
@@ -250,7 +284,7 @@ def main():
         "mushroom_type": "porcini",
         "source": "LANDFIRE LF2024 EVT raster + USGS 3DEP",
         "bbox": TAHOE_BBOX,
-        "sample_stride_m": 30 * SAMPLE_STRIDE,
+        "sample_stride_m": RASTER_RESOLUTION_M * SAMPLE_STRIDE,
         "cluster_bin_deg": CLUSTER_BIN_DEG,
         "evt_threshold": PORCINI_EVT_THRESHOLD,
         "elev_band_ft": [PORCINI_ELEV_MIN_FT, PORCINI_ELEV_MAX_FT],

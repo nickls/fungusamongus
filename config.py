@@ -258,6 +258,10 @@ MUSHROOM_TYPES = {
         "icon": "P",
         "needs_fire": False,
         "season_months": (7, 11),  # July through November in Sierra
+        # Catalog has ~10k stand candidates across the Sierra; cap at top-N
+        # by static potential before weather scoring to keep output JSON
+        # manageable. The suitability raster overlay covers the rest visually.
+        "max_scored_sites": 500,
         "notes": "Mycorrhizal with mature conifers (red fir, mixed conifer, Jeffrey "
                  "pine). Fall-fruiting — triggered by cooling soils + sustained "
                  "moisture after late-summer warmth. Flushes last weeks, not days.",
