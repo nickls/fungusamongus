@@ -1,7 +1,7 @@
 // Per-species UI configuration. Single source of truth for what the SPA
 // shows and how, indexed by mushroom_type. Loaded before app.js / detail.js.
 
-const SUPPORTED_SPECIES = ["morel", "porcini"];
+const SUPPORTED_SPECIES = ["morel", "porcini", "spring_king"];
 
 // Filter definitions used by sidebar sliders. Each species picks which
 // ones apply via SPECIES[type].filters.
@@ -86,6 +86,39 @@ const SPECIES = {
         { key: "elevation",     label: "Elevation",   max: 25, color: "#3498db" },
         { key: "season",        label: "Season",      max: 20, color: "#e67e22" },
         { key: "aspect",        label: "Aspect",      max: 5,  color: "#27ae60" },
+      ],
+      siteDetails: [
+        ["elevation", "Elevation"],
+        ["aspect",    "Aspect"],
+        ["slope",     "Slope"],
+        ["in_season", "Season"],
+      ],
+    },
+  },
+  spring_king: {
+    label: "Spring King (Boletus rex-veris)",
+    color: "#A0522D",
+    icon: "S",
+    // Same habitat as porcini (mature conifer stands), so reuses the
+    // suitability raster and catalog. Different scoring biology.
+    renderMode: "raster",
+    priorityCap: 50,
+    useHeatmap: false,
+    showBurnType: false,
+    overlay: {
+      url: "data/porcini-overlay.png",
+      boundsURL: "data/porcini-overlay.json",
+      bounds: [[38.80, -120.30], [39.40, -119.85]],  // fallback only
+      opacity: 0.55,
+    },
+    filters: ["potential", "readiness", "elevation_min", "elevation_max"],
+    detail: {
+      headerFields: ["evt_short", "elevation_ft", "slope_aspect"],
+      potentialFactors: [
+        { key: "vegetation",    label: "Vegetation",  max: 45, color: "#00de00" },
+        { key: "elevation",     label: "Elevation",   max: 25, color: "#3498db" },
+        { key: "season",        label: "Season",      max: 20, color: "#e67e22" },
+        { key: "aspect",        label: "Aspect",      max: 10, color: "#27ae60" },
       ],
       siteDetails: [
         ["elevation", "Elevation"],

@@ -262,6 +262,10 @@ MUSHROOM_TYPES = {
         # by static potential before weather scoring to keep output JSON
         # manageable. The suitability raster overlay covers the rest visually.
         "max_scored_sites": 500,
+        # Catalog + overlay paths — porcini owns these; spring_king reuses them
+        # via the same paths since they share habitat (mature conifer stands).
+        "catalog_path": "data/porcini_sites.json",
+        "overlay_path": "docs/data/porcini-overlay.png",
         "notes": "Mycorrhizal with mature conifers (red fir, mixed conifer, Jeffrey "
                  "pine). Fall-fruiting — triggered by cooling soils + sustained "
                  "moisture after late-summer warmth. Flushes last weeks, not days.",
@@ -301,6 +305,60 @@ MUSHROOM_TYPES = {
         "soil_temp_ideal": (50, 65),
         "elev_base": 5000,
         "elev_range": 3000,
+    },
+    "spring_king": {
+        "label": "Spring King (Boletus rex-veris)",
+        "color": "#A0522D",
+        "icon": "S",
+        "needs_fire": False,
+        # Spring/early summer fruiting near snowmelt at higher elevations
+        "season_months": (5, 7),
+        "max_scored_sites": 500,
+        # Reuses porcini's catalog + overlay — same habitat (mature conifer
+        # stands), just a different elevation band and biology.
+        "catalog_path": "data/porcini_sites.json",
+        "overlay_path": "docs/data/porcini-overlay.png",
+        "notes": "Sierra spring porcini. Mycorrhizal with conifers (red fir, mixed "
+                 "conifer, lodgepole). Fruits at higher elevations than fall king "
+                 "(B. edulis), triggered by snowmelt + warming soils — biologically "
+                 "more like morel than fall porcini.",
+
+        # ── Phase classification biology (warming-trigger like morel) ──
+        "thermal_signal": "warming",
+        "freeze_is_bad": True,             # primordia damaged by spring frost
+        "thermal_peak_threshold": 42,      # snowmelt → soil hits 42F is the "primed" cue
+        # Cooler soil range than morel — spring king fruits in colder soils
+        # near melting snowbanks
+        "start_soil_min": 38,
+        "start_soil_max": 48,
+        "grow_soil_min": 40,
+        "grow_soil_max": 55,
+        "past_prime_max": 65,              # declines fast once midsummer hits
+        "bad_freeze_threshold": 28,
+        "bad_snow_depth": 18,              # tolerates more snow than fall king
+
+        # ── Anti-whiplash ratchet ──
+        "ratchet_decay": 0.93,             # similar to morel — spring flushes are short
+        "ratchet_lookback": 14,
+
+        # ── Potential factor weights (must sum to 100) ──
+        "potential_weights": {
+            "burn_quality": 0,
+            "vegetation": 45,
+            "elevation": 25,               # higher elev band matters more
+            "aspect": 10,                  # snowmelt timing varies by aspect
+            "season": 20,
+            "freeze_damage": 0,
+        },
+
+        # ── Air temp ranges (proxy, low weight) ──
+        "temp_ideal_high": (50, 70),
+        "temp_ok_high": (40, 80),
+        "temp_ideal_low": (28, 45),
+        "soil_temp_ideal": (40, 55),
+        # Higher elevation band — snowmelt zone in late spring
+        "elev_base": 5500,
+        "elev_range": 3500,
     },
     "matsutake": {
         "label": "Matsutake (Tricholoma)",

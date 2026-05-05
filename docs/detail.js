@@ -29,7 +29,10 @@ async function init() {
   const params = new URLSearchParams(window.location.search);
   const slug = params.get("site");
   const day = parseInt(params.get("day") || "0");
-  const SUPPORTED = ["morel", "porcini"];
+  // Use the same whitelist as species.js (loaded before us), with a
+  // hard-coded fallback so the page still works if species.js failed.
+  const SUPPORTED = (typeof SUPPORTED_SPECIES !== "undefined" && SUPPORTED_SPECIES)
+    || ["morel", "porcini", "spring_king"];
   const requestedType = params.get("type");
   const species = SUPPORTED.includes(requestedType) ? requestedType : "morel";
 

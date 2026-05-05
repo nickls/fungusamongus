@@ -29,17 +29,23 @@ from mapping import print_report, rating
 from utils.weather import get_weather
 
 
-# Per-mushroom-type site catalog. Morel uses the historical sites.json (burn
-# perimeters); other species use <type>_sites.json (e.g. porcini_sites.json
-# from build_porcini_sites.py). Falls back to sites.json so Phase A can run
-# porcini end-to-end against burn sites before its dedicated catalog exists.
+# Per-mushroom-type site catalog. Resolution order:
+#   1. profile["catalog_path"] if set — lets multiple species share one catalog
+#      (spring_king + porcini share data/porcini_sites.json, same conifer stands)
+#   2. data/<type>_sites.json convention
+#   3. data/sites.json fallback (legacy morel)
 def sites_path_for(mushroom_type):
+    profile = MUSHROOM_TYPES.get(mushroom_type, {})
+    if profile.get("catalog_path"):
+        p = Path(profile["catalog_path"])
+        if p.exists():
+            return p
     if mushroom_type == "morel":
         return Path("data/sites.json")
     type_path = Path(f"data/{mushroom_type}_sites.json")
     if type_path.exists():
         return type_path
-    return Path("data/sites.json")  # fallback during Phase A bringup
+    return Path("data/sites.json")
 
 
 def haversine_km(lat1, lon1, lat2, lon2):

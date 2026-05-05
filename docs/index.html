@@ -49,6 +49,9 @@
           <button class="species-btn" data-species="porcini" onclick="selectSpecies('porcini')">
             <span class="species-icon" style="background:#8B4513;">P</span>Porcini
           </button>
+          <button class="species-btn" data-species="spring_king" onclick="selectSpecies('spring_king')">
+            <span class="species-icon" style="background:#A0522D;">S</span>Spring King
+          </button>
           <button class="species-btn coming-soon" data-species="matsutake" data-tooltip="Coming soon" onclick="return false;">
             <span class="species-icon" style="background:#CD853F;">T</span>Matsutake
           </button>
@@ -82,13 +85,13 @@
         <div class="legend-item legend-morel-only"><div class="legend-dot" style="background:orange;"></div> Low potential / waiting</div>
         <div class="legend-item" style="color:#666;font-size:10px;margin-top:4px;">Diamond size = potential | Number = readiness</div>
         <!-- Porcini-only: suitability raster overlay gradient -->
-        <div class="legend-item legend-porcini-only" style="margin-top:8px;padding-top:6px;border-top:1px solid #0f3460;">
+        <div class="legend-item legend-veg-only" style="margin-top:8px;padding-top:6px;border-top:1px solid #0f3460;">
           <div style="font-size:11px;color:#888;margin-bottom:4px;width:100%;">Stand suitability (basin tint)</div>
         </div>
-        <div class="legend-item legend-porcini-only"><div class="legend-dot" style="background:#9b59b6;"></div> 0.9+ — prime habitat</div>
-        <div class="legend-item legend-porcini-only"><div class="legend-dot" style="background:#27ae60;"></div> 0.75–0.9 — good</div>
-        <div class="legend-item legend-porcini-only"><div class="legend-dot" style="background:#e67e22;"></div> 0.6–0.75 — marginal</div>
-        <div class="legend-item legend-porcini-only"><div class="legend-dot" style="background:#a06020;"></div> 0.5–0.6 — possible</div>
+        <div class="legend-item legend-veg-only"><div class="legend-dot" style="background:#9b59b6;"></div> 0.9+ — prime habitat</div>
+        <div class="legend-item legend-veg-only"><div class="legend-dot" style="background:#27ae60;"></div> 0.75–0.9 — good</div>
+        <div class="legend-item legend-veg-only"><div class="legend-dot" style="background:#e67e22;"></div> 0.6–0.75 — marginal</div>
+        <div class="legend-item legend-veg-only"><div class="legend-dot" style="background:#a06020;"></div> 0.5–0.6 — possible</div>
       </div>
 
       <div class="legend" id="veg-legend" style="display:none;">

@@ -165,9 +165,11 @@ process.on("unhandledRejection", (e) => { console.error("unhandled:", e); proces
 console.log("== Detail page smoke test ==");
 await runSmoke("morel");
 await runSmoke("porcini");
+await runSmoke("spring_king");
 console.log("");
 console.log("== Per-type JSON shape check ==");
 checkShape("morel");
 checkShape("porcini");
+checkShape("spring_king");
 console.log("");
 console.log("All checks passed.");

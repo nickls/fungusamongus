@@ -45,10 +45,17 @@ async function init() {
     btn.classList.toggle("active", btn.dataset.species === species);
   });
 
-  // Show only the legend rows that apply to the active species
+  // Show legend rows that apply to the active species. Each row may carry
+  // either a species-specific class (legend-morel-only) or a shared class
+  // (legend-veg-only) for any species that uses the suitability overlay.
+  const speciesClass = `legend-${species}-only`;
+  const hasOverlay = !!speciesConfig.overlay;
   document.querySelectorAll("[class*='legend-'][class$='-only']").forEach((row) => {
-    const matchClass = `legend-${species}-only`;
-    row.style.display = row.classList.contains(matchClass) ? "" : "none";
+    const cls = row.classList;
+    const show =
+      cls.contains(speciesClass) ||
+      (hasOverlay && cls.contains("legend-veg-only"));
+    row.style.display = show ? "" : "none";
   });
 
   // Relabel the third Layers button to match the species: "Heatmap" for
