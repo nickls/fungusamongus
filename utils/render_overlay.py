@@ -24,12 +24,14 @@ import rasterio
 from PIL import Image
 
 from utils.landfire import EVT_LOOKUP
+from config import MUSHROOM_TYPES
 
 
 # Suitability thresholds per species. Anything ≥ threshold is rendered.
 SPECIES_THRESHOLDS = {
-    "porcini": 0.5,
-    "morel":   0.5,  # for completeness, though morel doesn't use this overlay
+    "porcini":     0.5,
+    "morel":       0.5,
+    "spring_king": 0.5,
 }
 
 # Color gradient — matches popup.js scoreColor() so the overlay and
@@ -63,15 +65,23 @@ def render(species, raster_path, output_path):
               f"lon [{bounds.left:.4f}, {bounds.right:.4f}]")
 
     # Build LUT mapping EVT code -> RGBA. Default = transparent.
+    # Per-species evt_lookup_overrides (from config.py) take precedence over
+    # the global EVT_LOOKUP — lets spring_king prefer open lodgepole over
+    # dense mixed conifer, etc.
+    profile = MUSHROOM_TYPES.get(species, {})
+    overrides = profile.get("evt_lookup_overrides", {})
+    if overrides:
+        print(f"  using {len(overrides)} {species}-specific EVT suitability overrides")
     max_code = int(evt.max()) + 1
     lut = np.zeros((max_code, 4), dtype=np.uint8)
     suitable_count = 0
     for code, (_, suit) in EVT_LOOKUP.items():
-        if suit >= threshold and code < max_code:
-            r, g, b, a = color_for_score(suit)
+        eff_suit = overrides.get(code, suit)
+        if eff_suit >= threshold and code < max_code:
+            r, g, b, a = color_for_score(eff_suit)
             lut[code] = (r, g, b, a)
             suitable_count += 1
-    print(f"  {suitable_count} EVT codes ≥ {threshold} suitability")
+    print(f"  {suitable_count} EVT codes ≥ {threshold} (effective) suitability")
 
     # Apply LUT — bound check first
     safe_evt = np.clip(evt, 0, max_code - 1)

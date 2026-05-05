@@ -317,11 +317,32 @@ MUSHROOM_TYPES = {
         # Reuses porcini's catalog + overlay — same habitat (mature conifer
         # stands), just a different elevation band and biology.
         "catalog_path": "data/porcini_sites.json",
-        "overlay_path": "docs/data/porcini-overlay.png",
-        "notes": "Sierra spring porcini. Mycorrhizal with conifers (red fir, mixed "
-                 "conifer, lodgepole). Fruits at higher elevations than fall king "
-                 "(B. edulis), triggered by snowmelt + warming soils — biologically "
-                 "more like morel than fall porcini.",
+        # Dedicated overlay rendered with the spring_king-specific EVT
+        # weights below, so the basin tint reflects spring-king habitat,
+        # not porcini's denser-forest preference.
+        "overlay_path": "docs/data/spring_king-overlay.png",
+        "notes": "Sierra spring porcini. Mycorrhizal with conifers but favors "
+                 "OPEN stands (lodgepole, parkland Jeffrey pine, subalpine "
+                 "woodland) over dense mixed conifer. Fruits at higher elevations "
+                 "than fall king (B. edulis), triggered by snowmelt + warming "
+                 "soils — biologically more like morel than fall porcini.",
+
+        # Per-species EVT suitability override — spring king prefers open,
+        # sunny conifer over closed-canopy mixed conifer, so we bump open-
+        # canopy types up and trim dense mixed conifer slightly. Codes not
+        # listed fall through to the global EVT_LOOKUP value.
+        "evt_lookup_overrides": {
+            7044: 0.95,  # Lodgepole pine — open, snowmelt zone, classic SK habitat
+            7098: 0.85,  # Subalpine woodland — open at high elev
+            7105: 0.85,  # Northern California Mesic Subalpine
+            7031: 0.95,  # Jeffrey pine — often parkland, very open
+            7033: 0.85,  # Red fir — suitable but denser than lodgepole
+            7032: 0.85,  # Lower montane conifer
+            7027: 0.75,  # Mesic mixed conifer — OK but often too dense
+            7028: 0.80,  # Dry-mesic mixed conifer — slightly more open
+            7080: 0.80,  # Aspen-mixed conifer
+            7058: 0.65,  # Mixed evergreen — too closed-canopy
+        },
 
         # ── Phase classification biology (warming-trigger like morel) ──
         "thermal_signal": "warming",

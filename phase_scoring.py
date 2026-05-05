@@ -512,10 +512,16 @@ def score_potential(fire, elev, terrain, mushroom_type="morel", evt=None):
     scores["season"] = max_pts if in_season else round(max_pts * 0.3)
     details["in_season"] = "YES" if in_season else f"no ({lo}-{hi})"
 
-    # Vegetation type (from LANDFIRE EVT)
+    # Vegetation type (from LANDFIRE EVT). Per-species overrides let one
+    # species score open lodgepole as prime while another flags it as marginal.
     max_pts = w.get("vegetation", 15)
     if evt and evt.get("evt_suitability") is not None:
-        veg_score = round(max_pts * evt["evt_suitability"])
+        suitability = evt["evt_suitability"]
+        overrides = mt.get("evt_lookup_overrides", {})
+        evt_code = evt.get("evt_code")
+        if evt_code in overrides:
+            suitability = overrides[evt_code]
+        veg_score = round(max_pts * suitability)
         details["vegetation"] = evt.get("evt_name", "Unknown")
     else:
         veg_score = round(max_pts * 0.5)  # unknown = assume moderate

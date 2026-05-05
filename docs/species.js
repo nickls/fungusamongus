@@ -99,15 +99,16 @@ const SPECIES = {
     label: "Spring King (Boletus rex-veris)",
     color: "#A0522D",
     icon: "S",
-    // Same habitat as porcini (mature conifer stands), so reuses the
-    // suitability raster and catalog. Different scoring biology.
+    // Shares the conifer-stand catalog with porcini but uses its own
+    // suitability raster — spring king prefers OPEN stands (lodgepole,
+    // Jeffrey pine, subalpine) over dense mixed conifer.
     renderMode: "raster",
     priorityCap: 50,
     useHeatmap: false,
     showBurnType: false,
     overlay: {
-      url: "data/porcini-overlay.png",
-      boundsURL: "data/porcini-overlay.json",
+      url: "data/spring_king-overlay.png",
+      boundsURL: "data/spring_king-overlay.json",
       bounds: [[38.80, -120.30], [39.40, -119.85]],  // fallback only
       opacity: 0.55,
     },
