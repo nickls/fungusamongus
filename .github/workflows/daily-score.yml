@@ -25,11 +25,32 @@ jobs:
           path: ~/.cache/pip
           key: pip-${{ hashFiles('requirements.txt') }}
 
+      # Weather cache survives between runs so:
+      # (a) historical archive days, once fetched, are NEVER re-fetched
+      # (b) when today's forecast fetch fails, yesterday's is the fallback
+      # New key per run so the post-run save always succeeds (GH caches are
+      # immutable once written). restore-keys takes the most recent prior cache.
+      - name: Restore weather cache
+        id: wxcache-restore
+        uses: actions/cache/restore@v4
+        with:
+          path: cache
+          key: wxcache-${{ github.run_id }}
+          restore-keys: |
+            wxcache-
+
       - name: Install dependencies
         run: pip install -r requirements.txt
 
       - name: Run scorer
         run: python morel_finder.py
+
+      - name: Save weather cache
+        if: always()  # save even if scorer aborted on fail-loud, so progress persists
+        uses: actions/cache/save@v4
+        with:
+          path: cache
+          key: wxcache-${{ github.run_id }}
 
       - name: Commit and push
         run: |

@@ -21,7 +21,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 
 from config import (ALDER_CREEK, LOCAL_RADIUS_KM, CACHE_DIR,
-                    MUSHROOM_TYPES, ALGO_VERSION)
+                    MUSHROOM_TYPES, ALGO_VERSION, WEATHER_FAIL_LOUD_THRESHOLD)
 from scoring import score_burn_site, score_burn_multiday
 from phase_scoring import (build_timeline, extract_features, classify_phase,
                            score_readiness, score_potential)
@@ -370,6 +370,26 @@ def main():
     for r in results[:5]:
         lbl, _ = rating(r["result"]["total"])
         print(f"  {r['zone']['name']:40s} {r['result']['total']:3d}/100 [{lbl}]")
+
+    # Fail-loud guardrail: refuse to write output when too many sites have no
+    # historical soil data. Without this, an Open-Meteo archive outage silently
+    # reclassifies GROWING sites as TOO_EARLY (see incidents 2026-05-03, 2026-05-17).
+    # Yesterday's good JSON stays live; nothing gets committed.
+    empty_hist = sum(1 for r in results if not r["weather"].get("hist_soil_temp"))
+    stale_fc = sum(1 for r in results if r["weather"].get("forecast_stale"))
+    total = max(1, len(results))
+    empty_pct = empty_hist / total
+    if empty_pct > WEATHER_FAIL_LOUD_THRESHOLD:
+        import sys
+        print(f"\nABORT: {empty_hist}/{total} sites ({empty_pct*100:.0f}%) "
+              f"have no historical soil data — exceeds {WEATHER_FAIL_LOUD_THRESHOLD*100:.0f}% threshold.")
+        print("Most likely cause: Open-Meteo archive endpoint outage or rate limit.")
+        print("Output not written. Existing JSON files remain unchanged.")
+        print("Retry after upstream recovers; immutable historical cache will")
+        print("preserve any partial progress.")
+        sys.exit(2)
+    if stale_fc > 0:
+        print(f"  note: {stale_fc}/{total} sites using stale forecast (fresh fetch failed)")
 
     # Step 3: Export JSON for SPA
     run_date = datetime.now().strftime("%Y-%m-%d")

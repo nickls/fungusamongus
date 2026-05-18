@@ -56,8 +56,35 @@ LOCAL_RADIUS_KM = 48  # ~30mi
 # ── Caching ────────────────────────────────────────────────────────────────
 
 CACHE_DIR = Path("cache")
-CACHE_TTL_HOURS = 6       # weather
+CACHE_TTL_HOURS = 6       # weather (legacy hashed-key cache; unused after wx refactor)
 CACHE_TTL_FIRE_HOURS = 24  # fire/elevation/terrain
+
+# ── Weather data refresh policy ────────────────────────────────────────────
+# Historical archive data is IMMUTABLE — each (lat,lon,date) is fetched once
+# and kept forever. Only the gap [last_cached+1, yesterday] is fetched per run.
+# Forecast data is mutable — fresh up to FRESH_HOURS, stale-OK up to STALE_HOURS
+# (when the live fetch fails, we serve cached data marked stale rather than
+# producing empty arrays that scoring silently treats as TOO_EARLY).
+WEATHER_HIST_WINDOW_DAYS = 30
+WEATHER_FORECAST_FRESH_HOURS = 4
+WEATHER_FORECAST_STALE_OK_HOURS = 24
+
+# Fail-loud threshold: if more than this fraction of sites end up with no
+# historical soil data, abort the run before writing JSON. The committed
+# output stays as whatever was there before — degraded scores never overwrite
+# good ones silently. Past incidents (2026-05-03, 2026-05-17) both involved
+# Open-Meteo archive failures cascading into 100→0 readiness drops.
+WEATHER_FAIL_LOUD_THRESHOLD = 0.10
+
+# ── HTTP client ────────────────────────────────────────────────────────────
+HTTP_RATE_LIMIT_RPS = 5.0  # global cap across all hosts; mostly bounds Open-Meteo bursts
+HTTP_USER_AGENT = (
+    f"mushroom-finder/{ALGO_VERSION} "
+    "(+https://github.com/nickls/fungusamongus; contact: nick@badcafe.io)"
+)
+HTTP_RETRIES = 4
+HTTP_CONNECT_TIMEOUT = 15
+HTTP_READ_TIMEOUT = 60
 
 # ── Rating thresholds ──────────────────────────────────────────────────────
 
