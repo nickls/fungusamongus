@@ -126,6 +126,21 @@ async function init() {
   html += `</div>`;
 
   // ════════════════════════════════════════════════════════════════
+  // DATA-QUALITY WARNING (only shown when needed)
+  // ════════════════════════════════════════════════════════════════
+  if (burn.data_missing) {
+    html += `<div style="margin:8px 0;padding:10px 14px;background:#e74c3c20;border-left:4px solid #e74c3c;border-radius:0 6px 6px 0;">`;
+    html += `<div style="font-size:14px;font-weight:bold;color:#e74c3c;">⚠ NO WEATHER DATA FOR THIS SITE</div>`;
+    html += `<div style="font-size:12px;color:#bbb;margin-top:2px;">Weather fetch failed (Open-Meteo unavailable). The score below is computed from empty data and is not reliable — treat as unknown, not as a real classification.</div>`;
+    html += `</div>`;
+  } else if (burn.forecast_stale) {
+    html += `<div style="margin:8px 0;padding:8px 14px;background:#f39c1220;border-left:4px solid #f39c12;border-radius:0 6px 6px 0;">`;
+    html += `<div style="font-size:13px;font-weight:bold;color:#f39c12;">⚠ STALE FORECAST</div>`;
+    html += `<div style="font-size:11px;color:#bbb;margin-top:2px;">Live forecast fetch failed; using cached forecast (up to 24h old). Historical data is current.</div>`;
+    html += `</div>`;
+  }
+
+  // ════════════════════════════════════════════════════════════════
   // PHASE HERO + DAY SELECTOR
   // ════════════════════════════════════════════════════════════════
   html += `<div style="display:flex;gap:16px;align-items:center;padding:12px 16px;background:${phaseColor}15;border-left:4px solid ${phaseColor};border-radius:0 8px 8px 0;">`;

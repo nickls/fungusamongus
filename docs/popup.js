@@ -27,6 +27,19 @@ function makePopup(burn, day, burnIdx) {
   html += ` | <a href="https://www.google.com/maps?q=${burn.lat},${burn.lon}" target="_blank" style="color:#53a8b6;">Map</a>`;
   html += `</div>`;
 
+  // Data-quality banner — show before scores so user sees it first
+  if (burn.data_missing) {
+    html += `<div style="margin:6px 0;padding:6px 8px;background:#e74c3c30;border-left:3px solid #e74c3c;border-radius:0 4px 4px 0;">`;
+    html += `<div style="font-size:11px;font-weight:bold;color:#e74c3c;">⚠ NO WEATHER DATA</div>`;
+    html += `<div style="font-size:10px;color:#aaa;">Score below is not reliable — weather fetch failed for this site.</div>`;
+    html += `</div>`;
+  } else if (burn.forecast_stale) {
+    html += `<div style="margin:6px 0;padding:6px 8px;background:#f39c1230;border-left:3px solid #f39c12;border-radius:0 4px 4px 0;">`;
+    html += `<div style="font-size:11px;font-weight:bold;color:#f39c12;">⚠ STALE FORECAST</div>`;
+    html += `<div style="font-size:10px;color:#aaa;">Forecast is from cache; live fetch failed. History is current.</div>`;
+    html += `</div>`;
+  }
+
   // Phase banner
   html += `<div style="display:flex;gap:8px;align-items:center;margin:6px 0;padding:6px 8px;background:${phaseColor}20;border-left:3px solid ${phaseColor};border-radius:0 4px 4px 0;">`;
   html += `<span style="font-size:11px;font-weight:bold;color:${phaseColor};">${phase}</span>`;

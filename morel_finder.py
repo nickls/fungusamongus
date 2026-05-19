@@ -241,6 +241,12 @@ def export_json(results, run_date, mushroom_type="morel"):
             except (ValueError, TypeError):
                 pass
 
+        # Per-site data-quality flags so the UI can show "no data" instead of
+        # presenting a TOO_EARLY/0 score as if it were a real classification.
+        # data_missing: this site's score should NOT be trusted at all.
+        # forecast_stale: forecast came from cache > 4h old (still usable).
+        data_missing = not wx.get("hist_soil_temp") or not wx.get("forecast_soil_temp")
+
         data["burns"].append({
             "slug": f.get("slug", ""),
             "name": z["name"],
@@ -254,6 +260,8 @@ def export_json(results, run_date, mushroom_type="morel"):
             "slope": z.get("slope"),
             "aspect": z.get("aspect"),
             "evt_name": z.get("evt_name"),
+            "data_missing": data_missing,
+            "forecast_stale": bool(wx.get("forecast_stale")),
             # Phase scoring (v0.7.0)
             "potential": pot.get("potential", 0),
             "potential_scores": pot.get("scores", {}),

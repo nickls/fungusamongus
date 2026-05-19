@@ -102,6 +102,56 @@ When changing scoring: smooth over windows, prefer cumulative features,
 distrust binary today-only signals. Validate against
 `data/field_reports.json`.
 
+### 4. Never trust incomplete API responses
+
+When a remote API returns partial or empty data, NEVER let it propagate
+into scoring as if it were real. This has bitten us twice from the same
+root cause:
+
+- 2026-05-03: Open-Meteo 429s for the archive endpoint were getting
+  cached, leaving 199/1133 sites stuck at readiness 0. Fix: don't cache
+  partial responses (`utils/weather.py:109`).
+- 2026-05-17: Same trigger (archive timeouts), different mechanism —
+  the not-cached partial responses were still used by the CURRENT run,
+  silently reclassifying 92 sites from >=70 to <30 readiness. Sites
+  that were GROWING/EMERGING yesterday came back TOO_EARLY/0 today,
+  overwriting yesterday's good output.
+
+Structural defenses, in order:
+
+1. **Historical data is immutable.** Once a (lat, lon, date) tuple is
+   fetched and cached in `cache/wxhist/`, it is never re-fetched and
+   never overwritten. A transient outage cannot wipe out yesterday's
+   known-good values. Each run only fetches the gap
+   `[last_cached_date + 1, yesterday]` — typically 1 day.
+
+2. **Forecast failures fall back to stale cache,** not to empty arrays.
+   Fresh up to `WEATHER_FORECAST_FRESH_HOURS` (4h), stale-OK up to
+   `WEATHER_FORECAST_STALE_OK_HOURS` (24h). Marked
+   `forecast_stale=True` so the UI shows it.
+
+3. **Per-site `data_missing=True` flag** when `hist_soil_temp` or
+   `forecast_soil_temp` is empty. The UI shows a "NO WEATHER DATA"
+   warning banner so users see "score unknown," not a fake TOO_EARLY.
+
+4. **Run-level fail-loud at `WEATHER_FAIL_LOUD_THRESHOLD`** (10% of
+   sites with empty hist). `morel_finder.py` exits 2 before writing
+   JSON. The committed output stays as whatever was there before —
+   degraded scores never overwrite good ones silently.
+
+5. **HTTP retry with exponential backoff** in `utils/http.py`. 429s
+   honor `Retry-After`; timeouts/5xx use jittered backoff. A 5 RPS
+   global rate limit prevents burst-induced 429s on the shared
+   GH Actions IP.
+
+6. **GH workflow cache** (`.github/workflows/daily-score.yml`)
+   persists `cache/` between runs, so cold-start cannot reproduce the
+   incident even after a runner restart.
+
+The general principle: **incomplete data is never an acceptable input
+to scoring or output to users**. Either the data is complete and the
+score is shown, or it is not and the user is told.
+
 ## When making changes
 
 - **Changing scoring logic**: Edit `phase_scoring.py` (primary) or `scoring.py` (legacy). All thresholds come from `config.py` via the mushroom type profile. **IMPORTANT: Update ALGO.md whenever scoring logic, weights, thresholds, or factors change.** ALGO.md is the canonical documentation of how the algorithm works — it must stay in sync with the code.
@@ -115,7 +165,11 @@ After meaningful scoring changes, bump `ALGO_VERSION` in `config.py`. This shows
 
 ## Data refresh
 
-- **Weather**: Auto-refreshes (6h TTL in cache)
+- **Weather (historical)**: Immutable per (lat, lon, date). Once cached
+  in `cache/wxhist/`, never re-fetched. Each run only fetches new days
+  since `last_cached_date`. See Operating Principle #4.
+- **Weather (forecast)**: 4h fresh-TTL, 24h stale-OK fallback in
+  `cache/wxfc/`. See Operating Principle #4.
 - **Fire perimeters (NIFC, Tahoe Fuels)**: Auto-refreshes (24h TTL)
 - **PFIRS**: Manual. Run `python -m utils.pfirs --fetch --cookie '...'` with a browser session cookie from ssl.arb.ca.gov/pfirs/. Or `--parse-raw` if you have saved HTML.
 
