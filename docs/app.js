@@ -357,8 +357,14 @@ function render() {
     const inMarkerSet = markerSet === null || markerSet.has(burnIdx);
     if (inMarkerSet && (layerMode === "both" || layerMode === "markers")) {
       const phaseColorMap = { EMERGING: "purple", GROWING: "green", WAITING: "orange", TOO_EARLY: "gray" };
-      const color = phaseColorMap[phase] || "orange";
+      const color = burn.data_missing ? "#555" : (phaseColorMap[phase] || "orange");
       const showDiamond = potential >= 60;
+      // Sites with no weather data: render with dashed white border and "?"
+      // so they're clearly distinguishable from a real low-score site. Never
+      // present an unreliable number as if it were a real classification.
+      const borderStyle = burn.data_missing ? "dashed" : "solid";
+      const label = burn.data_missing ? "?" : readiness;
+      const labelColor = burn.data_missing ? "#ddd" : "white";
 
       if (showDiamond) {
         const t = Math.max(0, Math.min(1, (potential - 60) / 30));
@@ -368,13 +374,14 @@ function render() {
           html: `<div style="
             width:${size}px;height:${size}px;
             background:${color};
-            border:2px solid white;
+            border:2px ${borderStyle} white;
             border-radius:3px;
             transform:rotate(45deg);
             box-shadow:0 0 4px rgba(0,0,0,0.5);
             display:flex;align-items:center;justify-content:center;
-          "><span style="transform:rotate(-45deg);color:white;
-            font-weight:bold;font-size:10px;">${readiness}</span></div>`,
+            opacity:${burn.data_missing ? 0.65 : 1};
+          "><span style="transform:rotate(-45deg);color:${labelColor};
+            font-weight:bold;font-size:10px;">${label}</span></div>`,
           iconSize: [size, size],
           iconAnchor: [size / 2, size / 2],
         });
@@ -382,10 +389,15 @@ function render() {
           .bindPopup(() => makePopup(burn, day, burnIdx), {maxWidth: 360})
           .addTo(markersLayer);
       } else if (speciesConfig.renderMode === "both") {
-        // Small dot fallback for low-potential morel burns. Porcini doesn't
-        // need this — the suitability raster already paints those areas.
+        // Small dot fallback for low-potential morel burns. data_missing
+        // renders hollow so users see "unknown" rather than a real score.
         L.circleMarker([burn.lat, burn.lon], {
-          radius: 4, color, fillColor: color, fillOpacity: 0.6, weight: 1,
+          radius: 4,
+          color,
+          fillColor: burn.data_missing ? "transparent" : color,
+          fillOpacity: burn.data_missing ? 0 : 0.6,
+          weight: burn.data_missing ? 2 : 1,
+          dashArray: burn.data_missing ? "2,2" : null,
         })
           .bindPopup(() => makePopup(burn, day, burnIdx), {maxWidth: 360})
           .addTo(markersLayer);

@@ -133,5 +133,37 @@
         "Model needs to recognize sites with continuous GROW even without recent START event"
       ]
     }
+  },
+  {
+    "id": "FR-004",
+    "date": "2026-05-16",
+    "observer": "nickls",
+    "mushroom_type": "morel",
+    "site": "A-4 (Underburn)",
+    "site_slug": "a-4-underburn-2025",
+    "lat": 39.4570,
+    "lon": -120.2959,
+    "burn_type": "Underburn",
+    "burn_age_months": 7,
+    "elevation_ft": 6988,
+    "acres": 25,
+    "morels_found": "~8lbs",
+    "other_mushrooms": "spring kings (Boletus rex-veris) — couple found nearby; pin pending",
+    "conditions": {
+      "vegetation": "Mediterranean California Mixed Evergreen Forest",
+      "notes": "Visited mid-morning. Site shown at 91% readiness (GROWING) on the 5/16 map; adjacent A-16 and B-1 at 89-92%. Biggest single-day morel haul on file."
+    },
+    "model_validation": {
+      "predicted_phase": "GROWING",
+      "predicted_readiness": 91,
+      "predicted_potential": 71,
+      "actual": "PRODUCING (~8lbs harvested + spring kings)",
+      "outcome": "positive — strong validation",
+      "lessons": [
+        "GROWING + 91 readiness + 71 potential held up — biggest single-site haul on record",
+        "Spring king co-occurred at same site (mixed conifer at 6988ft, S aspect) — supports the open-conifer-stand profile from commit 78fb529",
+        "Cluster effect: A-4, A-16, B-1 all peaked together at >89 — confirms multi-site cluster scoring tracks reality"
+      ]
+    }
   }
 ]

@@ -7,7 +7,18 @@ To experiment with different scoring algorithms:
   3. Run: python morel_finder.py --config config_experimental.py
 """
 
-ALGO_VERSION = "0.8.2"
+ALGO_VERSION = "0.8.3"
+# 0.8.3 — Weather pipeline hardening. Immutable per-day historical cache
+#          (cache/wxhist/) — each day fetched once, never re-fetched. Forecast
+#          cache with 4h fresh-TTL and 24h stale-OK fallback so transient
+#          Open-Meteo outages can't silently produce TOO_EARLY for sites that
+#          were GROWING yesterday (root cause of the 2026-05-17 incident).
+#          HTTP retry with exponential backoff, 429-aware delays honoring
+#          Retry-After, 5 RPS global rate limit, polite User-Agent. Per-site
+#          data_missing flag and run-level fail-loud at 10% empty hist.
+#          GH workflow uses actions/cache@v4 for cache persistence between
+#          runs. CLAUDE.md gains Operating Principle #4. No scoring math
+#          changes — version bump marks the data-pipeline rewrite.
 # 0.8.2 — Field-anchored PAST_PRIME thresholds for morel: grow_soil_max raised
 #          58F → 68F (Unit 2.3 5lb harvest at 60s validates); past_prime_max
 #          75F → 78F. Taper softened: 2-day grace before any penalty, then 8%
